@@ -7,9 +7,20 @@ from streamlit_cookies_controller import CookieController
 COOKIE_NAME = "numquants_session"
 
 
-@st.cache_resource
+_STATE_KEY = "_cookie_controller"
+
+
 def _controller() -> CookieController:
-    return CookieController()
+    """One instance per Streamlit session, memoised on st.session_state.
+
+    Must NOT be wrapped in @st.cache_resource — CookieController's __init__
+    renders a custom component (a widget), and Streamlit forbids widget calls
+    inside cached functions ("CachedWidgetWarning"). Per-session caching via
+    session_state is the supported pattern.
+    """
+    if _STATE_KEY not in st.session_state:
+        st.session_state[_STATE_KEY] = CookieController()
+    return st.session_state[_STATE_KEY]
 
 
 def get_session_token() -> str | None:
