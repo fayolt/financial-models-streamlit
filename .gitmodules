@@ -1,0 +1,21 @@
+[submodule "biotech"]
+	path = biotech
+	url = https://github.com/Kossit73/Biotech_financial_model.git
+[submodule "cassava-ethanol"]
+	path = cassava-ethanol
+	url = https://github.com/Kossit73/Cassava_Ethanol.git
+[submodule "chicken-farming"]
+	path = chicken-farming
+	url = https://github.com/Kossit73/Broiler_chicken_Financial_Model.git
+[submodule "goat-farming"]
+	path = goat-farming
+	url = https://github.com/Kossit73/Goat-Farming-Financial-Model.git
+[submodule "microbrewery"]
+	path = microbrewery
+	url = https://github.com/Kossit73/Microbrewery.git
+[submodule "pharma"]
+	path = pharma
+	url = https://github.com/Kossit73/PharmaFinancial.git
+[submodule "solar-farm"]
+	path = solar-farm
+	url = https://github.com/Kossit73/solar_farm.git
