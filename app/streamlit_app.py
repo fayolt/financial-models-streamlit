@@ -26,6 +26,7 @@ from app.pages import (  # noqa: E402
     forgot_password,
     login,
     model_landing,
+    model_workspace,
     models_dashboard,
     pricing,
     reset_password,
@@ -127,6 +128,16 @@ else:
     #     after Create, switch to the plugin's actual render() (the existing
     #     compute + download view from the contract).
 
+    # Workspace renderers — what shows after the user clicks Create model.
+    # Two integration patterns are live so we can compare side by side:
+    #   * biotech → inline import of biotech/streamlit_app.py main()
+    #   * pharma  → iframe to the pharma submodule running on its own port
+    #   * everything else → the existing minimal plugin.render() from the contract
+    _WORKSPACE_RENDERERS = {
+        "biotech": model_workspace.render_biotech_inline,
+        "pharma": model_workspace.render_pharma_iframe,
+    }
+
     def _make_plugin_page(plugin):
         is_available = plugin.slug in _AVAILABLE_SLUGS
 
@@ -141,7 +152,11 @@ else:
                     if st.button("← Back", key=f"back-{plugin.slug}"):
                         model_landing.mark_not_started(plugin.slug)
                         st.rerun()
-                plugin.render(user=plugin_user)
+                renderer = _WORKSPACE_RENDERERS.get(plugin.slug)
+                if renderer is not None:
+                    renderer()
+                else:
+                    plugin.render(user=plugin_user)
             else:
                 model_landing.render(plugin)
 

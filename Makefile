@@ -40,6 +40,15 @@ app:
 api:
 	.venv/bin/uvicorn api.main:app --reload --port 8000
 
+# Run the pharma submodule's standalone Streamlit on its own port so the
+# unified app can iframe it. Required for /pharma's workspace view.
+pharma-app:
+	.venv/bin/streamlit run pharma/streamlit_app.py \
+		--server.port=8511 \
+		--server.address=127.0.0.1 \
+		--server.headless=true \
+		--server.enableCORS=false
+
 test:
 	.venv/bin/pytest tests/ -v
 
