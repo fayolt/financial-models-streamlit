@@ -184,15 +184,27 @@ def _render_subscription_block(user_id: UUID) -> None:
                             "Paystack side to fully stop billing."
                         )
                 # Cancel locally regardless of paystack code presence.
+                # Cancel ALL active/past_due subs for this user — they may have
+                # accumulated duplicates from re-delivered webhooks or repeated
+                # verify-transaction callbacks.
+                from datetime import datetime, timezone
+
                 with SessionLocal() as db:
-                    deactivate_subscription(
-                        db,
-                        subscription_code=sub.paystack_subscription_code,
-                        subscription_id=sub.id,
+                    now = datetime.now(timezone.utc)
+                    open_subs = (
+                        db.query(Subscription)
+                        .filter_by(user_id=user_id)
+                        .filter(Subscription.status.in_(("active", "past_due")))
+                        .all()
                     )
+                    for open_sub in open_subs:
+                        open_sub.status = "cancelled"
+                        open_sub.cancelled_at = now
                     refreshed = db.get(User, user_id)
                     if refreshed is not None:
-                        st.session_state.user["tier"] = refreshed.tier
+                        refreshed.tier = "free"
+                        st.session_state.user["tier"] = "free"
+                    db.commit()
                 st.session_state.pop(cancel_key, None)
                 st.success("Subscription cancelled.")
                 st.rerun()

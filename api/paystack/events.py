@@ -26,7 +26,16 @@ def activate_subscription(
     plan: Plan,
     subscription_code: str | None,
 ) -> Subscription:
-    """Idempotently activate (or refresh) a subscription for a user."""
+    """Idempotently activate (or refresh) a subscription for a user.
+
+    Lookup priority (so we never create a duplicate row when one webhook
+    delivers without a code and a later one delivers with one, or vice
+    versa):
+      1. By paystack_subscription_code (if provided).
+      2. By any existing active/past_due sub for this user — update it
+         in place; if we also got a subscription_code now, backfill it.
+      3. Create a new row.
+    """
     sub: Subscription | None = None
     if subscription_code:
         sub = (
@@ -34,6 +43,15 @@ def activate_subscription(
             .filter_by(paystack_subscription_code=subscription_code)
             .first()
         )
+    if sub is None:
+        sub = (
+            db.query(Subscription)
+            .filter_by(user_id=user.id)
+            .filter(Subscription.status.in_(("active", "past_due")))
+            .order_by(Subscription.created_at.desc())
+            .first()
+        )
+
     if sub is None:
         sub = Subscription(
             user_id=user.id,
@@ -46,6 +64,9 @@ def activate_subscription(
         sub.status = "active"
         sub.plan_id = plan.id
         sub.cancelled_at = None
+        if subscription_code and not sub.paystack_subscription_code:
+            sub.paystack_subscription_code = subscription_code
+
     user.tier = plan.tier
     db.commit()
     return sub
