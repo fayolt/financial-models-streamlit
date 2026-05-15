@@ -1,6 +1,7 @@
 """Unified Streamlit entry for the Zenkos financial-models SaaS.
 
-Loads every registered plugin and exposes one page per model via st.navigation.
+Auth-gated: unauthenticated users see only login/signup pages; authenticated
+users see the plugin pages plus their account.
 """
 from __future__ import annotations
 
@@ -8,30 +9,23 @@ import sys
 from pathlib import Path
 from uuid import UUID
 
-# Streamlit runs this file directly, so the repo root must be on sys.path
-# for `import app.plugin` to resolve.
+# Streamlit runs this file directly, so the repo root must be on sys.path.
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 import streamlit as st  # noqa: E402
 
-from app.plugin import SubscriptionTier, User, load_plugins  # noqa: E402
+from app.auth.cookie import get_session_token  # noqa: E402
+from app.auth.service import get_current_user  # noqa: E402
+from app.db import SessionLocal  # noqa: E402
+from app.pages import account, login, signup  # noqa: E402
+from app.plugin import SubscriptionTier, User as PluginUser, load_plugins  # noqa: E402
 
 
 @st.cache_resource
 def _registry():
     return load_plugins(_REPO_ROOT / "models")
-
-
-@st.cache_resource
-def _dev_user() -> User:
-    """Phase-0 stub user. Replaced by real auth in Phase 2."""
-    return User(
-        id=UUID("00000000-0000-0000-0000-000000000001"),
-        email="dev@zenkos.local",
-        tier=SubscriptionTier.ENTERPRISE,
-    )
 
 
 st.set_page_config(
@@ -40,27 +34,61 @@ st.set_page_config(
     layout="wide",
 )
 
-registry = _registry()
-user = _dev_user()
+
+def _hydrate_user_from_cookie() -> None:
+    """Populate st.session_state.user from the persisted cookie, if any."""
+    if "user" in st.session_state:
+        return
+    token = get_session_token()
+    if not token:
+        return
+    with SessionLocal() as db:
+        user = get_current_user(db, token)
+    if user is None:
+        return
+    st.session_state.user = {
+        "id": str(user.id),
+        "email": user.email,
+        "tier": user.tier,
+        "full_name": user.full_name,
+    }
+    st.session_state.session_token = token
 
 
-def _make_page(plugin):
-    def _page() -> None:
-        plugin.render(user=user)
-    _page.__name__ = f"render_{plugin.slug.replace('-', '_')}"
-    return _page
+_hydrate_user_from_cookie()
 
 
-pages = []
-for plugin in registry:
-    title = f"{plugin.icon} {plugin.name}" if plugin.icon else plugin.name
-    pages.append(
-        st.Page(
-            _make_page(plugin),
-            title=title,
-            url_path=plugin.slug,
-        )
+if "user" not in st.session_state:
+    pg = st.navigation([
+        st.Page(login.render, title="Log in", url_path="login", icon=":material/login:"),
+        st.Page(signup.render, title="Sign up", url_path="signup", icon=":material/person_add:"),
+    ])
+else:
+    user_dict = st.session_state.user
+    plugin_user = PluginUser(
+        id=UUID(user_dict["id"]),
+        email=user_dict["email"],
+        tier=SubscriptionTier(user_dict["tier"]),
     )
 
-pg = st.navigation(pages)
+    def _make_page(plugin):
+        def _page() -> None:
+            plugin.render(user=plugin_user)
+        _page.__name__ = f"render_{plugin.slug.replace('-', '_')}"
+        return _page
+
+    plugin_pages = []
+    for plugin in _registry():
+        title = f"{plugin.icon} {plugin.name}" if plugin.icon else plugin.name
+        plugin_pages.append(
+            st.Page(_make_page(plugin), title=title, url_path=plugin.slug)
+        )
+
+    account_page = st.Page(
+        account.render, title="Account", url_path="account",
+        icon=":material/account_circle:",
+    )
+
+    pg = st.navigation({"Models": plugin_pages, "Account": [account_page]})
+
 pg.run()

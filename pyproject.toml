@@ -19,6 +19,7 @@ dependencies = [
     "argon2-cffi>=23.1",
     "PyJWT>=2.8",
     "email-validator>=2.0",
+    "streamlit-cookies-controller>=0.0.4",
 ]
 
 [project.optional-dependencies]
