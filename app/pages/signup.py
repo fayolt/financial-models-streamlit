@@ -43,6 +43,7 @@ def render() -> None:
         "email": user.email,
         "tier": user.tier,
         "full_name": user.full_name,
+        "is_admin": user.is_admin,
     }
     st.session_state.session_token = token
     st.success("Account created — welcome!")

@@ -21,6 +21,8 @@ from app.auth.service import get_current_user  # noqa: E402
 from app.db import SessionLocal  # noqa: E402
 from app.pages import (  # noqa: E402
     account,
+    admin_analytics,
+    admin_users,
     forgot_password,
     login,
     pricing,
@@ -58,6 +60,7 @@ def _hydrate_user_from_cookie() -> None:
         "email": user.email,
         "tier": user.tier,
         "full_name": user.full_name,
+        "is_admin": user.is_admin,
     }
     st.session_state.session_token = token
 
@@ -109,9 +112,21 @@ else:
         icon=":material/payments:",
     )
 
-    pg = st.navigation({
+    nav: dict[str, list] = {
         "Models": plugin_pages,
         "Billing": [pricing_page, account_page],
-    })
+    }
+    if user_dict.get("is_admin"):
+        nav["Admin"] = [
+            st.Page(
+                admin_users.render, title="Users", url_path="admin-users",
+                icon=":material/group:",
+            ),
+            st.Page(
+                admin_analytics.render, title="Analytics",
+                url_path="admin-analytics", icon=":material/insights:",
+            ),
+        ]
+    pg = st.navigation(nav)
 
 pg.run()
