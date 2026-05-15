@@ -1,0 +1,20 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: zenkos_db
+    environment:
+      POSTGRES_USER: zenkos
+      POSTGRES_PASSWORD: zenkos_dev
+      POSTGRES_DB: zenkos
+    ports:
+      - "5433:5432"  # 5433 to avoid conflicts with a system postgres
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U zenkos -d zenkos"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
