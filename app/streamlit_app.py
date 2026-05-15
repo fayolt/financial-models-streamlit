@@ -29,6 +29,9 @@ from app.pages import (  # noqa: E402
     reset_password,
     signup,
 )
+from app.pages.account import (  # noqa: E402
+    _handle_paystack_callback as _process_paystack_callback,
+)
 from app.plugin import SubscriptionTier, User as PluginUser, load_plugins  # noqa: E402
 
 
@@ -74,6 +77,17 @@ _hydrate_user_from_cookie()
 if "reset_token" in st.query_params and "user" not in st.session_state:
     reset_password.render()
     st.stop()
+
+
+# Paystack redirects back to *some* URL after checkout — which may or may
+# not be /account depending on plan/dashboard config. Detect ?reference= or
+# ?trxref= at the top level so the callback runs no matter where Paystack
+# lands the user. Inline `st.success` will appear above the default page.
+if (
+    "user" in st.session_state
+    and ("reference" in st.query_params or "trxref" in st.query_params)
+):
+    _process_paystack_callback()
 
 
 if "user" not in st.session_state:
