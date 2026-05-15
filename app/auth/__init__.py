@@ -2,12 +2,15 @@ from .gating import requires_tier, user_meets_tier
 from .passwords import hash_password, needs_rehash, verify_password
 from .service import (
     AuthError,
+    change_password,
     complete_password_reset,
+    delete_account,
     get_current_user,
     login,
     logout,
     request_password_reset,
     signup,
+    update_profile,
 )
 from .tokens import (
     InvalidTokenError,
@@ -21,7 +24,9 @@ from .tokens import (
 __all__ = [
     "AuthError",
     "InvalidTokenError",
+    "change_password",
     "complete_password_reset",
+    "delete_account",
     "get_current_user",
     "hash_password",
     "issue_reset_token",
@@ -33,6 +38,7 @@ __all__ = [
     "requires_tier",
     "signup",
     "token_hash",
+    "update_profile",
     "user_meets_tier",
     "verify_password",
     "verify_reset_token",

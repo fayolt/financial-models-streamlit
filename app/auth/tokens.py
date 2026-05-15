@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import UUID
@@ -39,6 +40,9 @@ def issue_session_token(
     now = datetime.now(timezone.utc)
     expires_at = now + timedelta(seconds=ttl_seconds or SESSION_TTL_SECONDS)
     payload = {
+        # `jti` makes every issued token unique even when called twice in the
+        # same second — otherwise two rapid logins collide on token_hash.
+        "jti": uuid.uuid4().hex,
         "sub": str(user_id),
         "email": email,
         "purpose": "session",
@@ -72,6 +76,7 @@ def issue_reset_token(
     now = datetime.now(timezone.utc)
     expires_at = now + timedelta(seconds=ttl_seconds)
     payload = {
+        "jti": uuid.uuid4().hex,
         "sub": str(user_id),
         "purpose": "reset",
         "iat": int(now.timestamp()),

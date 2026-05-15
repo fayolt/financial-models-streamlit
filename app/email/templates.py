@@ -47,6 +47,44 @@ Reply to this email if you hit any issues.
     return subject, text, html
 
 
+def password_changed_email(*, recipient_email: str) -> tuple[str, str, str]:
+    subject = "Your Zenkos password was changed"
+    text = f"""The password for your Zenkos account ({recipient_email}) was just changed.
+
+If this was you, no action is needed.
+
+If you didn't change your password, reply to this email immediately so we can help secure your account.
+
+— Zenkos Security
+"""
+    html = _html_shell(
+        f"""<h2 style="margin-bottom:8px;">Password changed</h2>
+<p>The password for your Zenkos account (<strong>{recipient_email}</strong>) was just changed.</p>
+<p>If this was you, no action is needed.</p>
+<p style="color:#b91c1c;">If you didn't change your password, reply to this email immediately so we can help secure your account.</p>"""
+    )
+    return subject, text, html
+
+
+def account_deleted_email(*, recipient_email: str) -> tuple[str, str, str]:
+    subject = "Your Zenkos account has been deleted"
+    text = f"""The Zenkos account for {recipient_email} has been deleted at your request. All saved data has been removed.
+
+Any active subscription has been cancelled — you will not be billed again.
+
+If you didn't request this, reply to this email immediately.
+
+— Zenkos Security
+"""
+    html = _html_shell(
+        f"""<h2 style="margin-bottom:8px;">Account deleted</h2>
+<p>The Zenkos account for <strong>{recipient_email}</strong> has been deleted at your request. All saved data has been removed.</p>
+<p>Any active subscription has been cancelled — you will not be billed again.</p>
+<p style="color:#b91c1c;">If you didn't request this, reply to this email immediately.</p>"""
+    )
+    return subject, text, html
+
+
 def password_reset_email(
     *,
     recipient_email: str,

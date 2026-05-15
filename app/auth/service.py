@@ -19,7 +19,13 @@ from app.auth.tokens import (
     verify_session_token,
 )
 from app.db.models import Session as SessionRow, User
-from app.email import password_reset_email, send_email_best_effort, welcome_email
+from app.email import (
+    account_deleted_email,
+    password_changed_email,
+    password_reset_email,
+    send_email_best_effort,
+    welcome_email,
+)
 
 
 class AuthError(ValueError):
@@ -86,6 +92,110 @@ def request_password_reset(db: SASession, *, email: str) -> bool:
     )
     send_email_best_effort(to=user.email, subject=subject, text=text, html=html)
     return True
+
+
+def change_password(
+    db: SASession,
+    *,
+    user_id: UUID,
+    current_password: str,
+    new_password: str,
+    keep_current_session_token: str | None = None,
+) -> User:
+    """Verify the user's current password, set a new one, revoke other sessions.
+
+    If `keep_current_session_token` is provided, that one session is preserved
+    so the user isn't logged out of the tab where they just changed their
+    password. All other sessions are revoked for safety."""
+    user = db.get(User, user_id)
+    if user is None or not user.is_active:
+        raise AuthError("User not found.")
+    if not verify_password(user.password_hash, current_password):
+        raise AuthError("Current password is incorrect.")
+    if len(new_password) < 8:
+        raise AuthError("New password must be at least 8 characters.")
+    if verify_password(user.password_hash, new_password):
+        raise AuthError("New password must differ from the current one.")
+
+    user.password_hash = hash_password(new_password)
+    now = datetime.now(timezone.utc)
+    revoke_query = (
+        db.query(SessionRow)
+        .filter_by(user_id=user.id)
+        .filter(SessionRow.revoked_at.is_(None))
+    )
+    if keep_current_session_token:
+        revoke_query = revoke_query.filter(
+            SessionRow.token_hash != token_hash(keep_current_session_token)
+        )
+    revoke_query.update(
+        {SessionRow.revoked_at: now}, synchronize_session=False
+    )
+    db.commit()
+
+    subject, text, html = password_changed_email(recipient_email=user.email)
+    send_email_best_effort(to=user.email, subject=subject, text=text, html=html)
+    return user
+
+
+def update_profile(
+    db: SASession, *, user_id: UUID, full_name: str | None
+) -> User:
+    """Update the user's profile fields. Currently only full_name."""
+    user = db.get(User, user_id)
+    if user is None or not user.is_active:
+        raise AuthError("User not found.")
+    if full_name is None:
+        # Nothing to do — surface as a no-op rather than error.
+        return user
+    user.full_name = full_name.strip() or None
+    db.commit()
+    return user
+
+
+def delete_account(
+    db: SASession, *, user_id: UUID, password_confirm: str
+) -> str:
+    """Delete the user after verifying their password. Returns the email
+    address (for caller-side cookie clearing / messaging).
+
+    Tries to cancel any active Paystack subscriptions first, best-effort —
+    a failed Paystack call doesn't block deletion (user wants out)."""
+    user = db.get(User, user_id)
+    if user is None or not user.is_active:
+        raise AuthError("User not found.")
+    if not verify_password(user.password_hash, password_confirm):
+        raise AuthError("Password is incorrect.")
+
+    email = user.email
+
+    # Best-effort: cancel active Paystack subscriptions before deleting the user.
+    from app.db.models import Subscription
+    try:
+        from api.paystack import disable_subscription
+    except Exception:  # pragma: no cover — defensive
+        disable_subscription = None  # type: ignore[assignment]
+
+    active_subs = (
+        db.query(Subscription)
+        .filter_by(user_id=user.id)
+        .filter(Subscription.status.in_(("active", "past_due")))
+        .all()
+    )
+    for sub in active_subs:
+        if disable_subscription and sub.paystack_subscription_code:
+            try:
+                disable_subscription(sub.paystack_subscription_code)
+            except Exception:
+                pass  # carry on with deletion
+
+    # CASCADE wipes sessions, subscriptions, report_runs.
+    db.delete(user)
+    db.commit()
+
+    subject, text, html = account_deleted_email(recipient_email=email)
+    send_email_best_effort(to=email, subject=subject, text=text, html=html)
+    return email
 
 
 def complete_password_reset(

@@ -1,4 +1,4 @@
-"""Account page: profile, current subscription, Paystack callback handling, logout."""
+"""Account page: profile, security, subscription, Paystack callback, danger zone."""
 from __future__ import annotations
 
 from uuid import UUID
@@ -13,18 +13,25 @@ from api.paystack import (
     verify_transaction,
 )
 from app.auth.cookie import clear_session_token
-from app.auth.service import logout
+from app.auth.service import (
+    AuthError,
+    change_password,
+    delete_account,
+    logout,
+    update_profile,
+)
 from app.db import SessionLocal
 from app.db.models import Plan, Subscription, User
 
 
+# --- Paystack callback (unchanged from prior phase) -------------------------
+
+
 def _handle_paystack_callback() -> None:
-    """If the URL has ?reference=..., verify it with Paystack and activate the sub."""
     qp = st.query_params
     reference = qp.get("reference") or qp.get("trxref")
     if not reference:
         return
-    # Only verify once per reference (refreshes shouldn't re-verify).
     verified_key = f"verified_ref_{reference}"
     if st.session_state.get(verified_key):
         st.query_params.clear()
@@ -43,16 +50,13 @@ def _handle_paystack_callback() -> None:
         st.session_state[verified_key] = True
         return
 
-    # Sync local DB so the user sees the upgrade immediately even if the
-    # subscription.create webhook hasn't arrived yet (it's idempotent).
     customer_email = (data.get("customer") or {}).get("email", "").lower()
     plan_info = data.get("plan_object") or data.get("plan") or {}
     plan_code = plan_info.get("plan_code") if isinstance(plan_info, dict) else None
-    subscription_code = None
-    # Paystack puts the subscription on `subscription` for recurring transactions.
     sub_obj = data.get("subscription") or {}
-    if isinstance(sub_obj, dict):
-        subscription_code = sub_obj.get("subscription_code")
+    subscription_code = (
+        sub_obj.get("subscription_code") if isinstance(sub_obj, dict) else None
+    )
 
     if plan_code:
         with SessionLocal() as db:
@@ -66,7 +70,6 @@ def _handle_paystack_callback() -> None:
                 activate_subscription(
                     db, user=user_row, plan=plan, subscription_code=subscription_code
                 )
-                # Refresh the session-state cache of user info.
                 st.session_state.user["tier"] = user_row.tier
 
     amount = (data.get("amount") or 0) / 100
@@ -76,6 +79,61 @@ def _handle_paystack_callback() -> None:
     )
     st.session_state[verified_key] = True
     st.query_params.clear()
+
+
+# --- Section: profile + security --------------------------------------------
+
+
+def _render_profile_section(user_id: UUID) -> None:
+    user_dict = st.session_state.user
+    st.subheader("Profile")
+    with st.form("profile_form"):
+        full_name = st.text_input("Full name", value=user_dict.get("full_name") or "")
+        submitted = st.form_submit_button("Save")
+    if submitted:
+        with SessionLocal() as db:
+            try:
+                user = update_profile(db, user_id=user_id, full_name=full_name)
+            except AuthError as e:
+                st.error(str(e))
+                return
+        st.session_state.user["full_name"] = user.full_name
+        st.success("Profile updated.")
+
+
+def _render_security_section(user_id: UUID) -> None:
+    st.subheader("Security")
+    with st.expander("Change password"):
+        with st.form("change_password_form", clear_on_submit=True):
+            current = st.text_input("Current password", type="password")
+            new = st.text_input("New password", type="password", help="At least 8 characters.")
+            confirm = st.text_input("Confirm new password", type="password")
+            submitted = st.form_submit_button("Update password", type="primary")
+        if not submitted:
+            return
+        if not current or not new:
+            st.error("All fields are required.")
+            return
+        if new != confirm:
+            st.error("New passwords do not match.")
+            return
+        keep_token = st.session_state.get("session_token")
+        with SessionLocal() as db:
+            try:
+                change_password(
+                    db,
+                    user_id=user_id,
+                    current_password=current,
+                    new_password=new,
+                    keep_current_session_token=keep_token,
+                )
+            except AuthError as e:
+                st.error(str(e))
+                return
+        st.success("Password updated. Other devices have been signed out.")
+
+
+# --- Section: subscription (unchanged) --------------------------------------
 
 
 def _render_subscription_block(user_id: UUID) -> None:
@@ -93,13 +151,18 @@ def _render_subscription_block(user_id: UUID) -> None:
         plan = db.get(Plan, sub.plan_id)
 
     st.subheader("Active subscription")
-    st.markdown(f"**Plan:** {plan.name}  ·  {plan.currency} {plan.monthly_price_minor_units / 100:,.0f}/mo")
+    st.markdown(
+        f"**Plan:** {plan.name}  ·  {plan.currency} {plan.monthly_price_minor_units / 100:,.0f}/mo"
+    )
     badge = {"active": "🟢 Active", "past_due": "🟡 Past due"}.get(sub.status, sub.status)
     st.markdown(f"**Status:** {badge}")
 
     cancel_key = f"confirming_cancel_{sub.id}"
     if st.session_state.get(cancel_key):
-        st.warning("Cancel this subscription? You'll be demoted to the Free tier at the end of the current period.")
+        st.warning(
+            "Cancel this subscription? You'll be demoted to the Free tier at the "
+            "end of the current period."
+        )
         c1, c2 = st.columns(2)
         with c1:
             if st.button("Yes, cancel", type="primary", use_container_width=True):
@@ -130,6 +193,48 @@ def _render_subscription_block(user_id: UUID) -> None:
             st.rerun()
 
 
+# --- Section: danger zone ---------------------------------------------------
+
+
+def _render_danger_zone(user_id: UUID) -> None:
+    st.subheader("Danger zone")
+    with st.expander("Delete account"):
+        st.warning(
+            "Deleting your account permanently removes your profile, subscriptions, "
+            "report history, and saved scenarios. Any active subscription is cancelled. "
+            "**This cannot be undone.**"
+        )
+        with st.form("delete_account_form"):
+            confirm_pw = st.text_input("Confirm with your password", type="password")
+            confirm_check = st.checkbox(
+                "I understand my data will be permanently deleted."
+            )
+            submitted = st.form_submit_button("Delete my account", type="primary")
+        if not submitted:
+            return
+        if not confirm_check:
+            st.error("You must confirm before deletion.")
+            return
+        if not confirm_pw:
+            st.error("Password is required.")
+            return
+        with SessionLocal() as db:
+            try:
+                delete_account(db, user_id=user_id, password_confirm=confirm_pw)
+            except AuthError as e:
+                st.error(str(e))
+                return
+        # Clear local session.
+        clear_session_token()
+        st.session_state.pop("user", None)
+        st.session_state.pop("session_token", None)
+        st.success("Account deleted.")
+        st.rerun()
+
+
+# --- Page entry -------------------------------------------------------------
+
+
 def render() -> None:
     user = st.session_state.get("user")
     if user is None:
@@ -140,9 +245,13 @@ def render() -> None:
 
     st.title("Account")
     st.markdown(f"**Email:** {user['email']}")
-    if user.get("full_name"):
-        st.markdown(f"**Name:** {user['full_name']}")
     st.markdown(f"**Subscription tier:** {user['tier'].title()}")
+
+    st.divider()
+    _render_profile_section(UUID(user["id"]))
+
+    st.divider()
+    _render_security_section(UUID(user["id"]))
 
     st.divider()
     _render_subscription_block(UUID(user["id"]))
@@ -157,3 +266,6 @@ def render() -> None:
         st.session_state.pop("user", None)
         st.session_state.pop("session_token", None)
         st.rerun()
+
+    st.divider()
+    _render_danger_zone(UUID(user["id"]))
