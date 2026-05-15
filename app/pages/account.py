@@ -165,30 +165,47 @@ def _render_subscription_block(user_id: UUID) -> None:
         )
         c1, c2 = st.columns(2)
         with c1:
-            if st.button("Yes, cancel", type="primary", use_container_width=True):
+            if st.button(
+                "Yes, cancel",
+                type="primary",
+                use_container_width=True,
+                key=f"confirm-cancel-{sub.id}",
+            ):
+                # Try to tell Paystack to stop billing, but never let a
+                # network/Paystack failure block the local cancellation —
+                # the user explicitly asked to cancel.
                 if sub.paystack_subscription_code:
                     try:
                         disable_subscription(sub.paystack_subscription_code)
-                    except PaystackError as e:
-                        st.error(f"Paystack error: {e}")
-                        return
-                with SessionLocal() as db:
-                    if sub.paystack_subscription_code:
-                        deactivate_subscription(
-                            db, subscription_code=sub.paystack_subscription_code
+                    except Exception as e:
+                        st.warning(
+                            f"Paystack call failed (`{e}`). Cancelling locally "
+                            "anyway — you may also need to cancel on the "
+                            "Paystack side to fully stop billing."
                         )
-                    user = db.get(User, user_id)
-                    if user is not None:
-                        st.session_state.user["tier"] = user.tier
+                # Cancel locally regardless of paystack code presence.
+                with SessionLocal() as db:
+                    deactivate_subscription(
+                        db,
+                        subscription_code=sub.paystack_subscription_code,
+                        subscription_id=sub.id,
+                    )
+                    refreshed = db.get(User, user_id)
+                    if refreshed is not None:
+                        st.session_state.user["tier"] = refreshed.tier
                 st.session_state.pop(cancel_key, None)
                 st.success("Subscription cancelled.")
                 st.rerun()
         with c2:
-            if st.button("Keep my plan", use_container_width=True):
+            if st.button(
+                "Keep my plan",
+                use_container_width=True,
+                key=f"keep-plan-{sub.id}",
+            ):
                 st.session_state.pop(cancel_key, None)
                 st.rerun()
     else:
-        if st.button("Cancel subscription"):
+        if st.button("Cancel subscription", key=f"cancel-btn-{sub.id}"):
             st.session_state[cancel_key] = True
             st.rerun()
 

@@ -52,13 +52,24 @@ def activate_subscription(
 
 
 def deactivate_subscription(
-    db: SASession, *, subscription_code: str, demote_user: bool = True
+    db: SASession,
+    *,
+    subscription_code: str | None = None,
+    subscription_id: Any = None,
+    demote_user: bool = True,
 ) -> Subscription | None:
-    sub = (
-        db.query(Subscription)
-        .filter_by(paystack_subscription_code=subscription_code)
-        .first()
-    )
+    """Mark a subscription cancelled. Caller may identify it by Paystack code
+    OR by primary-key UUID — useful when a sub was activated via the
+    verify-transaction callback and never received a paystack_subscription_code."""
+    sub: Subscription | None = None
+    if subscription_code:
+        sub = (
+            db.query(Subscription)
+            .filter_by(paystack_subscription_code=subscription_code)
+            .first()
+        )
+    if sub is None and subscription_id is not None:
+        sub = db.get(Subscription, subscription_id)
     if sub is None:
         return None
     sub.status = "cancelled"
