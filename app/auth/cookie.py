@@ -7,20 +7,25 @@ from streamlit_cookies_controller import CookieController
 COOKIE_NAME = "numquants_session"
 
 
-_STATE_KEY = "_cookie_controller"
-
-
 def _controller() -> CookieController:
-    """One instance per Streamlit session, memoised on st.session_state.
+    """Return a fresh CookieController per call. Do NOT cache the instance.
 
-    Must NOT be wrapped in @st.cache_resource — CookieController's __init__
-    renders a custom component (a widget), and Streamlit forbids widget calls
-    inside cached functions ("CachedWidgetWarning"). Per-session caching via
-    session_state is the supported pattern.
+    Two pitfalls handled here:
+    1) `@st.cache_resource` is forbidden because CookieController.__init__
+       renders a Streamlit custom component (a widget).
+    2) Stashing the instance in `st.session_state` *also* breaks: the
+       library pins its in-memory cookie dict at __init__ time. On the
+       first script run after a hard refresh the JS component hasn't
+       replied yet, so __cookies = {}. When the component later fires a
+       rerun, a cached instance still holds the stale empty dict and
+       `.get()` keeps returning None — so the user appears logged out.
+
+    The library already caches the *cookie data* in `st.session_state["cookies"]`,
+    so re-instantiating per call skips the component round-trip after the
+    first call within a script run, then picks up the freshly-loaded data
+    on the next rerun.
     """
-    if _STATE_KEY not in st.session_state:
-        st.session_state[_STATE_KEY] = CookieController()
-    return st.session_state[_STATE_KEY]
+    return CookieController()
 
 
 def get_session_token() -> str | None:
