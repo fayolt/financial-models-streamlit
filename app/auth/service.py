@@ -1,6 +1,7 @@
-"""Signup, login, logout, and current-user resolution backed by Postgres."""
+"""Signup, login, logout, current-user resolution, and password-reset flow."""
 from __future__ import annotations
 
+import os
 from datetime import datetime, timezone
 from typing import Optional
 from uuid import UUID
@@ -9,12 +10,16 @@ from sqlalchemy.orm import Session as SASession
 
 from app.auth.passwords import hash_password, needs_rehash, verify_password
 from app.auth.tokens import (
+    PASSWORD_RESET_TTL_SECONDS,
     InvalidTokenError,
+    issue_reset_token,
     issue_session_token,
     token_hash,
+    verify_reset_token,
     verify_session_token,
 )
 from app.db.models import Session as SessionRow, User
+from app.email import password_reset_email, send_email_best_effort, welcome_email
 
 
 class AuthError(ValueError):
@@ -48,6 +53,64 @@ def signup(
     db.add(user)
     db.commit()
     db.refresh(user)
+    _send_welcome_email(user)
+    return user
+
+
+def _app_base_url() -> str:
+    return os.environ.get("APP_BASE_URL", "http://localhost:8501").rstrip("/")
+
+
+def _send_welcome_email(user: User) -> None:
+    subject, text, html = welcome_email(
+        recipient_email=user.email,
+        full_name=user.full_name,
+        app_url=_app_base_url(),
+    )
+    send_email_best_effort(to=user.email, subject=subject, text=text, html=html)
+
+
+def request_password_reset(db: SASession, *, email: str) -> bool:
+    """Send a password-reset email if the address exists. Always returns True
+    to the caller — we don't disclose whether an email is registered."""
+    email = email.strip().lower()
+    user = db.query(User).filter_by(email=email).first()
+    if user is None or not user.is_active:
+        return True  # silent for security
+    token, _ = issue_reset_token(user_id=user.id)
+    reset_link = f"{_app_base_url()}/?reset_token={token}"
+    subject, text, html = password_reset_email(
+        recipient_email=user.email,
+        reset_link=reset_link,
+        ttl_minutes=PASSWORD_RESET_TTL_SECONDS // 60,
+    )
+    send_email_best_effort(to=user.email, subject=subject, text=text, html=html)
+    return True
+
+
+def complete_password_reset(
+    db: SASession, *, token: str, new_password: str
+) -> User:
+    """Verify a reset token, set the new password, revoke existing sessions."""
+    try:
+        user_id = verify_reset_token(token)
+    except InvalidTokenError as e:
+        raise AuthError(f"Reset link is invalid or expired: {e}")
+    if len(new_password) < 8:
+        raise AuthError("Password must be at least 8 characters.")
+    user = db.get(User, user_id)
+    if user is None or not user.is_active:
+        raise AuthError("Reset link is invalid or expired.")
+    user.password_hash = hash_password(new_password)
+    # Revoke all existing sessions for safety — the attacker (if any) is logged out.
+    now = datetime.now(timezone.utc)
+    (
+        db.query(SessionRow)
+        .filter_by(user_id=user.id)
+        .filter(SessionRow.revoked_at.is_(None))
+        .update({SessionRow.revoked_at: now}, synchronize_session=False)
+    )
+    db.commit()
     return user
 
 

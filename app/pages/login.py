@@ -18,6 +18,8 @@ def render() -> None:
         password = st.text_input("Password", type="password")
         submitted = st.form_submit_button("Log in", type="primary")
 
+    _render_forgot_link()
+
     if not submitted:
         return
     if not email or not password:
@@ -41,3 +43,13 @@ def render() -> None:
     st.session_state.session_token = token
     st.success("Logged in. Loading your dashboard…")
     st.rerun()
+
+
+def _render_forgot_link() -> None:
+    """Inline link to the forgot-password page, rendered below the form."""
+    st.markdown(
+        '<p style="margin-top:4px;font-size:13px;">'
+        '<a href="/forgot-password" target="_self">Forgot password?</a>'
+        '</p>',
+        unsafe_allow_html=True,
+    )
