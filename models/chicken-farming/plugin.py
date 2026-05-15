@@ -136,8 +136,30 @@ class ChickenFarmingPlugin:
         if irr_val is not None:
             col2.metric("IRR", f"{float(irr_val) * 100:,.2f}%")
 
-        from app.reports.ui import render_report_downloads
+        from app.reports.ui import render_commentary_section, render_report_downloads
         render_report_downloads(self, inputs, results, user)
+        render_commentary_section(
+            self, inputs, results, user, self._commentary_summary
+        )
+
+    def _commentary_summary(self, inputs, results) -> dict:
+        return {
+            "headline_metrics": {
+                "NPV (USD)": results.valuation.get("npv"),
+                "IRR": results.valuation.get("irr"),
+                "Initial investment (USD)": results.valuation.get("initial_investment"),
+                "WACC": results.valuation.get("discount_rate"),
+            },
+            "inputs": {
+                "Flock size": inputs.flock_size,
+                "Batches per year": inputs.batches_per_year,
+                "Mortality (%)": inputs.mortality_pct,
+                "Feed cost per kg (USD)": inputs.feed_cost_per_kg,
+                "Selling price per kg (USD)": inputs.selling_price_per_kg,
+                "Chick cost per bird (USD)": inputs.chick_cost_per_bird,
+                "Total capex (USD)": inputs.capex_total,
+            },
+        }
 
     def generate_report(
         self,

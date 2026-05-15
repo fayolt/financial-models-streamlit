@@ -325,8 +325,31 @@ class BiotechPlugin:
             f"{results.summary['peak_revenue_modelled']:,.0f}",
         )
 
-        from app.reports.ui import render_report_downloads
+        from app.reports.ui import render_commentary_section, render_report_downloads
         render_report_downloads(self, inputs, results, user)
+        render_commentary_section(
+            self, inputs, results, user, self._commentary_summary
+        )
+
+    def _commentary_summary(self, inputs, results) -> dict:
+        return {
+            "headline_metrics": {
+                "rNPV (USD)": results.summary.get("rnpv"),
+                "IRR": results.summary.get("irr"),
+                "Peak revenue modelled (USD)": results.summary.get(
+                    "peak_revenue_modelled"
+                ),
+            },
+            "inputs": {
+                "Peak revenue target (USD)": inputs.peak_revenue,
+                "Launch year": inputs.launch_year,
+                "Patent expiry year": inputs.patent_expiry_year,
+                "Gross margin": inputs.gross_margin,
+                "R&D capex (USD)": inputs.rd_capex,
+                "WACC": inputs.wacc,
+                "Probability of technical success": inputs.success_probability,
+            },
+        }
 
     def generate_report(
         self,

@@ -1,11 +1,14 @@
 """Streamlit helper that renders per-format download buttons under a plugin page."""
 from __future__ import annotations
 
+from typing import Callable
+
 from pydantic import BaseModel
 import streamlit as st
 
 from app.db import SessionLocal
-from app.plugin.contract import Format, ModelPlugin, ModelResults, User
+from app.plugin.contract import Format, ModelPlugin, ModelResults, SubscriptionTier, User
+from .commentary import CommentaryError, generate_commentary
 from .service import (
     FORMAT_TIER_REQUIRED,
     QuotaExceeded,
@@ -133,3 +136,49 @@ def _render_one_format(
 
     st.session_state[cached_key] = data
     st.rerun()
+
+
+def render_commentary_section(
+    plugin: ModelPlugin,
+    inputs: BaseModel,
+    results: ModelResults,
+    user: User,
+    summary_builder: Callable[[BaseModel, ModelResults], dict],
+) -> None:
+    """Enterprise-only: a button to generate LLM commentary on this model's run.
+
+    `summary_builder` returns the dict that gets serialised into the LLM
+    prompt — keep it focused (key metrics + key inputs only).
+    """
+    st.divider()
+    st.subheader("AI commentary")
+
+    if user.tier != SubscriptionTier.ENTERPRISE:
+        st.info("AI-generated executive commentary is an Enterprise-tier feature.")
+        return
+
+    cache_key = f"commentary::{plugin.slug}"
+    if cache_key in st.session_state:
+        st.markdown(st.session_state[cache_key])
+        if st.button("Regenerate", key=f"regen-comm-{plugin.slug}"):
+            st.session_state.pop(cache_key, None)
+            st.rerun()
+        return
+
+    if st.button(
+        "Generate AI commentary",
+        type="primary",
+        key=f"gen-comm-{plugin.slug}",
+    ):
+        with st.spinner("Calling the LLM…"):
+            try:
+                text = generate_commentary(
+                    plugin_name=plugin.name,
+                    description=plugin.description,
+                    summary=summary_builder(inputs, results),
+                )
+            except CommentaryError as e:
+                st.error(f"Couldn't generate commentary: {e}")
+                return
+        st.session_state[cache_key] = text
+        st.rerun()
