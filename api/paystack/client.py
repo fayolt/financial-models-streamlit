@@ -66,3 +66,27 @@ def fetch_plan(plan_code: str) -> dict[str, Any]:
     with httpx.Client(timeout=10.0) as c:
         resp = c.get(f"{_base_url()}/plan/{plan_code}", headers=_headers())
     return _unwrap(resp)
+
+
+def fetch_subscription(subscription_code: str) -> dict[str, Any]:
+    """Fetch a subscription by its code. Includes the email_token needed to disable."""
+    with httpx.Client(timeout=10.0) as c:
+        resp = c.get(
+            f"{_base_url()}/subscription/{subscription_code}", headers=_headers()
+        )
+    return _unwrap(resp)
+
+
+def disable_subscription(subscription_code: str) -> dict[str, Any]:
+    """Cancel a Paystack subscription. Idempotent: succeeds if already disabled."""
+    detail = fetch_subscription(subscription_code)
+    email_token = detail.get("email_token")
+    if not email_token:
+        raise PaystackError("Subscription has no email_token; cannot disable.")
+    with httpx.Client(timeout=10.0) as c:
+        resp = c.post(
+            f"{_base_url()}/subscription/disable",
+            headers=_headers(),
+            json={"code": subscription_code, "token": email_token},
+        )
+    return _unwrap(resp)

@@ -19,7 +19,7 @@ import streamlit as st  # noqa: E402
 from app.auth.cookie import get_session_token  # noqa: E402
 from app.auth.service import get_current_user  # noqa: E402
 from app.db import SessionLocal  # noqa: E402
-from app.pages import account, login, signup  # noqa: E402
+from app.pages import account, login, pricing, signup  # noqa: E402
 from app.plugin import SubscriptionTier, User as PluginUser, load_plugins  # noqa: E402
 
 
@@ -88,7 +88,14 @@ else:
         account.render, title="Account", url_path="account",
         icon=":material/account_circle:",
     )
+    pricing_page = st.Page(
+        pricing.render, title="Pricing", url_path="pricing",
+        icon=":material/payments:",
+    )
 
-    pg = st.navigation({"Models": plugin_pages, "Account": [account_page]})
+    pg = st.navigation({
+        "Models": plugin_pages,
+        "Billing": [pricing_page, account_page],
+    })
 
 pg.run()

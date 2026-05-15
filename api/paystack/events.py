@@ -1,7 +1,10 @@
 """Apply Paystack webhook events to our DB.
 
 Each handler is idempotent — Paystack may retry the same event, and we
-should never end up with duplicate Subscription rows.
+should never end up with duplicate Subscription rows. The two service
+helpers (`activate_subscription`, `deactivate_subscription`) are also
+called by the Streamlit "verify on callback" flow so both paths converge
+on the same state transitions.
 """
 from __future__ import annotations
 
@@ -11,6 +14,64 @@ from typing import Any, Callable
 from sqlalchemy.orm import Session as SASession
 
 from app.db.models import Plan, Subscription, User
+
+
+# --- Service helpers (also used outside webhook context) ---------------------
+
+
+def activate_subscription(
+    db: SASession,
+    *,
+    user: User,
+    plan: Plan,
+    subscription_code: str | None,
+) -> Subscription:
+    """Idempotently activate (or refresh) a subscription for a user."""
+    sub: Subscription | None = None
+    if subscription_code:
+        sub = (
+            db.query(Subscription)
+            .filter_by(paystack_subscription_code=subscription_code)
+            .first()
+        )
+    if sub is None:
+        sub = Subscription(
+            user_id=user.id,
+            plan_id=plan.id,
+            status="active",
+            paystack_subscription_code=subscription_code,
+        )
+        db.add(sub)
+    else:
+        sub.status = "active"
+        sub.plan_id = plan.id
+        sub.cancelled_at = None
+    user.tier = plan.tier
+    db.commit()
+    return sub
+
+
+def deactivate_subscription(
+    db: SASession, *, subscription_code: str, demote_user: bool = True
+) -> Subscription | None:
+    sub = (
+        db.query(Subscription)
+        .filter_by(paystack_subscription_code=subscription_code)
+        .first()
+    )
+    if sub is None:
+        return None
+    sub.status = "cancelled"
+    sub.cancelled_at = datetime.now(timezone.utc)
+    if demote_user:
+        user = db.get(User, sub.user_id)
+        if user is not None:
+            user.tier = "free"
+    db.commit()
+    return sub
+
+
+# --- Internal helpers --------------------------------------------------------
 
 
 def _user_from_customer(db: SASession, customer: dict[str, Any]) -> User | None:
@@ -29,66 +90,38 @@ def _user_from_customer(db: SASession, customer: dict[str, Any]) -> User | None:
     return None
 
 
+# --- Webhook event handlers --------------------------------------------------
+
+
 def handle_subscription_create(db: SASession, payload: dict[str, Any]) -> None:
     data = payload.get("data", {})
-    customer = data.get("customer", {})
-    user = _user_from_customer(db, customer)
+    user = _user_from_customer(db, data.get("customer", {}))
     if user is None:
         return
 
-    plan_info = data.get("plan", {})
-    plan_code = plan_info.get("plan_code")
+    plan_code = (data.get("plan") or {}).get("plan_code")
     if not plan_code:
         return
     plan = db.query(Plan).filter_by(paystack_plan_code=plan_code).first()
     if plan is None:
         return
 
-    sub_code = data.get("subscription_code")
-    sub = (
-        db.query(Subscription)
-        .filter_by(paystack_subscription_code=sub_code)
-        .first()
-        if sub_code
-        else None
+    activate_subscription(
+        db, user=user, plan=plan, subscription_code=data.get("subscription_code")
     )
-    if sub is None:
-        sub = Subscription(
-            user_id=user.id,
-            plan_id=plan.id,
-            status="active",
-            paystack_subscription_code=sub_code,
-        )
-        db.add(sub)
-    else:
-        sub.status = "active"
-        sub.plan_id = plan.id
-        sub.cancelled_at = None
-
-    user.tier = plan.tier
-    db.commit()
 
 
 def handle_subscription_disable(db: SASession, payload: dict[str, Any]) -> None:
-    data = payload.get("data", {})
-    sub_code = data.get("subscription_code")
+    sub_code = (payload.get("data") or {}).get("subscription_code")
     if not sub_code:
         return
-    sub = db.query(Subscription).filter_by(paystack_subscription_code=sub_code).first()
-    if sub is None:
-        return
-    sub.status = "cancelled"
-    sub.cancelled_at = datetime.now(timezone.utc)
-
-    user = db.get(User, sub.user_id)
-    if user is not None:
-        user.tier = "free"
-    db.commit()
+    deactivate_subscription(db, subscription_code=sub_code)
 
 
 def handle_invoice_payment_failed(db: SASession, payload: dict[str, Any]) -> None:
-    data = payload.get("data", {})
-    sub_code = (data.get("subscription") or {}).get("subscription_code")
+    sub_code = (
+        (payload.get("data") or {}).get("subscription") or {}
+    ).get("subscription_code")
     if not sub_code:
         return
     sub = db.query(Subscription).filter_by(paystack_subscription_code=sub_code).first()
@@ -99,20 +132,18 @@ def handle_invoice_payment_failed(db: SASession, payload: dict[str, Any]) -> Non
 
 
 def handle_invoice_payment_success(db: SASession, payload: dict[str, Any]) -> None:
-    """Renewal succeeded — make sure status is active."""
-    data = payload.get("data", {})
-    sub_code = (data.get("subscription") or {}).get("subscription_code")
+    sub_code = (
+        (payload.get("data") or {}).get("subscription") or {}
+    ).get("subscription_code")
     if not sub_code:
         return
     sub = db.query(Subscription).filter_by(paystack_subscription_code=sub_code).first()
     if sub is None:
         return
     sub.status = "active"
-
-    # In case the user was demoted on a past_due, restore their tier from the plan.
     plan = db.get(Plan, sub.plan_id)
     user = db.get(User, sub.user_id)
-    if plan and user:
+    if plan is not None and user is not None:
         user.tier = plan.tier
     db.commit()
 
@@ -121,8 +152,8 @@ EVENT_HANDLERS: dict[str, Callable[[SASession, dict[str, Any]], None] | None] = 
     "subscription.create": handle_subscription_create,
     "subscription.disable": handle_subscription_disable,
     "invoice.payment_failed": handle_invoice_payment_failed,
-    "invoice.update": handle_invoice_payment_success,  # Paystack fires this on renewal
-    "charge.success": None,  # ignored: subscription.create covers initial activation
+    "invoice.update": handle_invoice_payment_success,
+    "charge.success": None,
     "invoice.create": None,
 }
 
