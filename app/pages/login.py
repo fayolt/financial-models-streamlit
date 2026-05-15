@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import streamlit as st
 
-from app.auth.cookie import set_session_token
+from app.auth.cookie import set_session_and_redirect
 from app.auth.service import AuthError, login
 from app.auth.tokens import SESSION_TTL_SECONDS
 from app.db import SessionLocal
@@ -33,17 +33,14 @@ def render() -> None:
             st.error(str(e))
             return
 
-    set_session_token(token, max_age_seconds=SESSION_TTL_SECONDS)
-    st.session_state.user = {
-        "id": str(user.id),
-        "email": user.email,
-        "tier": user.tier,
-        "full_name": user.full_name,
-        "is_admin": user.is_admin,
-    }
-    st.session_state.session_token = token
+    # Set the cookie AND redirect in one JS block. The fresh HTTP request
+    # carries the cookie so st.context.cookies sees it on first read.
+    # session_state will be repopulated by _hydrate_user_from_cookie.
     st.success("Logged in. Loading your dashboard…")
-    st.rerun()
+    set_session_and_redirect(
+        token, max_age_seconds=SESSION_TTL_SECONDS, redirect_path="/"
+    )
+    st.stop()
 
 
 def _render_forgot_link() -> None:

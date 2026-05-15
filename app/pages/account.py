@@ -12,7 +12,7 @@ from api.paystack import (
     disable_subscription,
     verify_transaction,
 )
-from app.auth.cookie import clear_session_token
+from app.auth.cookie import clear_session_and_redirect
 from app.auth.service import (
     AuthError,
     change_password,
@@ -262,10 +262,10 @@ def render() -> None:
         if token:
             with SessionLocal() as db:
                 logout(db, token)
-        clear_session_token()
         st.session_state.pop("user", None)
         st.session_state.pop("session_token", None)
-        st.rerun()
+        clear_session_and_redirect(redirect_path="/")
+        st.stop()
 
     st.divider()
     _render_danger_zone(UUID(user["id"]))

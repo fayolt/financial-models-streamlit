@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import streamlit as st
 
-from app.auth.cookie import set_session_token
+from app.auth.cookie import set_session_and_redirect
 from app.auth.service import AuthError, login, signup
 from app.auth.tokens import SESSION_TTL_SECONDS
 from app.db import SessionLocal
@@ -37,14 +37,8 @@ def render() -> None:
             st.error(str(e))
             return
 
-    set_session_token(token, max_age_seconds=SESSION_TTL_SECONDS)
-    st.session_state.user = {
-        "id": str(user.id),
-        "email": user.email,
-        "tier": user.tier,
-        "full_name": user.full_name,
-        "is_admin": user.is_admin,
-    }
-    st.session_state.session_token = token
     st.success("Account created — welcome!")
-    st.rerun()
+    set_session_and_redirect(
+        token, max_age_seconds=SESSION_TTL_SECONDS, redirect_path="/"
+    )
+    st.stop()
