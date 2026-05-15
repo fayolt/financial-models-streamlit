@@ -1,7 +1,7 @@
 """Unified Streamlit entry for the Numquants financial-models SaaS.
 
 Auth-gated: unauthenticated users see only login/signup pages; authenticated
-users see the plugin pages plus their account.
+users see the Dashboard (models grid) plus per-model landing pages.
 """
 from __future__ import annotations
 
@@ -25,6 +25,8 @@ from app.pages import (  # noqa: E402
     admin_users,
     forgot_password,
     login,
+    model_landing,
+    models_dashboard,
     pricing,
     reset_password,
     signup,
@@ -33,6 +35,13 @@ from app.pages.account import (  # noqa: E402
     _handle_paystack_callback as _process_paystack_callback,
 )
 from app.plugin import SubscriptionTier, User as PluginUser, load_plugins  # noqa: E402
+
+
+# --- Config: which model slugs are "ready" today vs. "in coming" -------------
+# Listed as "Available models" in the sidebar / dashboard. Plugins not in this
+# set are surfaced under "In coming" — registered as pages (so URLs work) but
+# shown with a Coming-soon placeholder when visited.
+_AVAILABLE_SLUGS: set[str] = {"pharma", "biotech", "cassava-ethanol"}
 
 
 @st.cache_resource
@@ -44,6 +53,7 @@ st.set_page_config(
     page_title="Numquants Financial Models",
     page_icon="📊",
     layout="wide",
+    initial_sidebar_state="expanded",
 )
 
 
@@ -96,6 +106,7 @@ if "user" not in st.session_state:
         st.Page(signup.render, title="Sign up", url_path="signup", icon=":material/person_add:"),
         st.Page(forgot_password.render, title="Forgot password", url_path="forgot-password", icon=":material/lock_reset:"),
     ])
+    pg.run()
 else:
     user_dict = st.session_state.user
     plugin_user = PluginUser(
@@ -104,19 +115,66 @@ else:
         tier=SubscriptionTier(user_dict["tier"]),
     )
 
-    def _make_page(plugin):
+    registry = _registry()
+    all_plugins = sorted(registry, key=lambda p: p.name)
+    available_plugins = [p for p in all_plugins if p.slug in _AVAILABLE_SLUGS]
+    coming_plugins = [p for p in all_plugins if p.slug not in _AVAILABLE_SLUGS]
+
+    # --- Build per-plugin pages ---------------------------------------------
+    # Each page wraps the plugin in a landing-then-workspace flow:
+    #   * coming-soon plugins → static Coming-soon placeholder
+    #   * available plugins → landing page first (template + Create button);
+    #     after Create, switch to the plugin's actual render() (the existing
+    #     compute + download view from the contract).
+
+    def _make_plugin_page(plugin):
+        is_available = plugin.slug in _AVAILABLE_SLUGS
+
         def _page() -> None:
-            plugin.render(user=plugin_user)
+            if not is_available:
+                model_landing.render_coming_soon(plugin)
+                return
+            if model_landing.is_started(plugin.slug):
+                # Back button to return to landing
+                back_col, _ = st.columns([1, 11])
+                with back_col:
+                    if st.button("← Back", key=f"back-{plugin.slug}"):
+                        model_landing.mark_not_started(plugin.slug)
+                        st.rerun()
+                plugin.render(user=plugin_user)
+            else:
+                model_landing.render(plugin)
+
         _page.__name__ = f"render_{plugin.slug.replace('-', '_')}"
         return _page
 
-    plugin_pages = []
-    for plugin in _registry():
+    plugin_page_objs: dict[str, st.Page] = {}
+    for plugin in all_plugins:
         title = f"{plugin.icon} {plugin.name}" if plugin.icon else plugin.name
-        plugin_pages.append(
-            st.Page(_make_page(plugin), title=title, url_path=plugin.slug)
+        plugin_page_objs[plugin.slug] = st.Page(
+            _make_plugin_page(plugin),
+            title=title,
+            url_path=plugin.slug,
         )
 
+    # --- Dashboard page (default) ------------------------------------------
+
+    def _on_select_from_dashboard(slug: str) -> None:
+        model_landing.mark_not_started(slug)  # reset "started" → land on the landing page
+        st.switch_page(plugin_page_objs[slug])
+
+    def _dashboard_page() -> None:
+        models_dashboard.render(available_plugins, _on_select_from_dashboard)
+
+    dashboard_page = st.Page(
+        _dashboard_page,
+        title="Dashboard",
+        url_path="dashboard",
+        icon=":material/dashboard:",
+        default=True,
+    )
+
+    # --- Billing + Admin pages ----------------------------------------------
     account_page = st.Page(
         account.render, title="Account", url_path="account",
         icon=":material/account_circle:",
@@ -125,13 +183,9 @@ else:
         pricing.render, title="Pricing", url_path="pricing",
         icon=":material/payments:",
     )
-
-    nav: dict[str, list] = {
-        "Models": plugin_pages,
-        "Billing": [pricing_page, account_page],
-    }
+    admin_pages: list[st.Page] = []
     if user_dict.get("is_admin"):
-        nav["Admin"] = [
+        admin_pages = [
             st.Page(
                 admin_users.render, title="Users", url_path="admin-users",
                 icon=":material/group:",
@@ -141,6 +195,77 @@ else:
                 url_path="admin-analytics", icon=":material/insights:",
             ),
         ]
-    pg = st.navigation(nav)
 
-pg.run()
+    # --- Custom sidebar (replaces Streamlit's default nav rendering) --------
+    with st.sidebar:
+        st.markdown(
+            "<h2 style='margin:0 0 16px 0;'>"
+            "<span style='color:#16a34a;'>●</span> NumQuants"
+            "</h2>",
+            unsafe_allow_html=True,
+        )
+
+        st.markdown("**HOME**")
+        if st.button(
+            "🏠  Dashboard",
+            key="sidebar-dashboard",
+            use_container_width=True,
+        ):
+            st.switch_page(dashboard_page)
+
+        st.markdown(f"**AVAILABLE MODELS ({len(available_plugins)})**")
+        for plugin in available_plugins:
+            label = (
+                f"{plugin.icon}  {plugin.name}" if plugin.icon else plugin.name
+            )
+            if st.button(
+                label,
+                key=f"sidebar-{plugin.slug}",
+                use_container_width=True,
+            ):
+                st.switch_page(plugin_page_objs[plugin.slug])
+
+        if coming_plugins:
+            st.markdown(f"**IN COMING ({len(coming_plugins)})**")
+            for plugin in coming_plugins:
+                label = (
+                    f"{plugin.icon}  {plugin.name}" if plugin.icon else plugin.name
+                )
+                # Disabled — visual placeholder only.
+                st.button(
+                    label,
+                    key=f"sidebar-coming-{plugin.slug}",
+                    use_container_width=True,
+                    disabled=True,
+                )
+
+        st.markdown("**BILLING**")
+        if st.button(
+            "💳  Pricing", key="sidebar-pricing", use_container_width=True
+        ):
+            st.switch_page(pricing_page)
+        if st.button(
+            "👤  Account", key="sidebar-account", use_container_width=True
+        ):
+            st.switch_page(account_page)
+
+        if admin_pages:
+            st.markdown("**ADMIN**")
+            if st.button(
+                "👥  Users", key="sidebar-admin-users", use_container_width=True
+            ):
+                st.switch_page(admin_pages[0])
+            if st.button(
+                "📈  Analytics",
+                key="sidebar-admin-analytics",
+                use_container_width=True,
+            ):
+                st.switch_page(admin_pages[1])
+
+    # --- Hidden nav: still gives us URL routing without showing the default
+    # sidebar list (we render our own above). ---
+    pg = st.navigation(
+        [dashboard_page, *plugin_page_objs.values(), pricing_page, account_page, *admin_pages],
+        position="hidden",
+    )
+    pg.run()
