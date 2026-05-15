@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 DATABASE_URL: str = os.environ.get(
     "DATABASE_URL",
-    "postgresql+psycopg2://zenkos:zenkos_dev@localhost:5433/zenkos",
+    "postgresql+psycopg2://numquants:numquants_dev@localhost:5433/numquants",
 )
 
 engine = create_engine(DATABASE_URL, pool_pre_ping=True, future=True)

@@ -4,7 +4,7 @@ from __future__ import annotations
 import streamlit as st
 from streamlit_cookies_controller import CookieController
 
-COOKIE_NAME = "zenkos_session"
+COOKIE_NAME = "numquants_session"
 
 
 @st.cache_resource

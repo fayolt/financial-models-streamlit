@@ -108,8 +108,8 @@ def test_request_password_reset_sends_email_for_known_user(db: Session, monkeypa
     signup(db, email="alice@example.com", password="strongpass1")
     monkeypatch.setenv("MAILGUN_API_KEY", "key-test")
     monkeypatch.setenv("MAILGUN_DOMAIN", "mg.example.com")
-    monkeypatch.setenv("MAIL_FROM", "Zenkos <hello@mg.example.com>")
-    monkeypatch.setenv("APP_BASE_URL", "https://zenkos.example.com")
+    monkeypatch.setenv("MAIL_FROM", "Numquants <hello@mg.example.com>")
+    monkeypatch.setenv("APP_BASE_URL", "https://numquants.example.com")
 
     with patch("app.email.client.httpx.Client") as MockClient:
         instance = MockClient.return_value.__enter__.return_value
@@ -122,7 +122,7 @@ def test_request_password_reset_sends_email_for_known_user(db: Session, monkeypa
         sent = instance.post.call_args.kwargs["data"]
         assert sent["to"] == "alice@example.com"
         assert "reset_token=" in sent["text"]
-        assert "https://zenkos.example.com" in sent["text"]
+        assert "https://numquants.example.com" in sent["text"]
 
 
 def test_complete_password_reset_updates_hash(db: Session):

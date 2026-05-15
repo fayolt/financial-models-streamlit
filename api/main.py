@@ -13,7 +13,7 @@ from api.paystack.events import process_event
 from api.paystack.signature import verify_signature
 from app.db import SessionLocal
 
-app = FastAPI(title="Zenkos Backend", version="0.1.0")
+app = FastAPI(title="Numquants Backend", version="0.1.0")
 
 
 @app.get("/api/health")

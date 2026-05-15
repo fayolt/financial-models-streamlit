@@ -1,4 +1,4 @@
-"""Unified Streamlit entry for the Zenkos financial-models SaaS.
+"""Unified Streamlit entry for the Numquants financial-models SaaS.
 
 Auth-gated: unauthenticated users see only login/signup pages; authenticated
 users see the plugin pages plus their account.
@@ -38,7 +38,7 @@ def _registry():
 
 
 st.set_page_config(
-    page_title="Zenkos Financial Models",
+    page_title="Numquants Financial Models",
     page_icon="📊",
     layout="wide",
 )

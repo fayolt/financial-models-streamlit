@@ -324,8 +324,8 @@ def build_pdf(
     sections: Iterable,
     subtitle: str = "",
     watermark: str | None = None,
-    footer_text: str = "Zenkos Financial Models",
-    author: str = "Zenkos",
+    footer_text: str = "Numquants Financial Models",
+    author: str = "Numquants",
 ) -> bytes:
     """Assemble a full PDF document. Returns the raw bytes."""
     buf = BytesIO()

@@ -1,6 +1,6 @@
-# Zenkos Financial Models
+# Numquants Financial Models
 
-Unified Streamlit SaaS hosting the Zenkos financial-models catalogue (biotech,
+Unified Streamlit SaaS hosting the Numquants financial-models catalogue (biotech,
 cassava-ethanol, chicken-farming, goat-farming, microbrewery, pharma,
 solar-farm) behind email + password auth and Paystack subscriptions, with
 tier-gated XLSX/PDF reports and optional LLM commentary on selected models.
@@ -92,7 +92,7 @@ in that case but a habit worth keeping.
 Three commands diagnose submodule state:
 
 | Command | What it tells you |
-|---|---|
+| --- | --- |
 | `git submodule status` | Each submodule's pinned SHA. `+SHA` = working tree is ahead of the pin (you have local commits the parent doesn't know about). `-SHA` = not initialized (run `git submodule update --init`). |
 | `git submodule summary` | Per-submodule list of commits between the parent's pinned SHA and the submodule's current `HEAD`. |
 | `git submodule foreach 'git status'` | Run any command inside every submodule — useful for spotting dirty trees in bulk. |
@@ -138,7 +138,7 @@ unified Streamlit nav automatically.
 
 `make help` lists everything. The day-to-day set:
 
-```
+```bash
 make db-up           # start Postgres
 make db-down         # stop Postgres
 make migrate         # apply alembic migrations

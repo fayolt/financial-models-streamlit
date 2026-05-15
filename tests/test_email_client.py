@@ -14,7 +14,7 @@ def _set_mailgun(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("MAILGUN_API_KEY", "key-unit-test")
     monkeypatch.setenv("MAILGUN_DOMAIN", "mg.example.com")
     monkeypatch.setenv("MAILGUN_API_BASE", "https://api.mailgun.net")
-    monkeypatch.setenv("MAIL_FROM", "Zenkos <hello@mg.example.com>")
+    monkeypatch.setenv("MAIL_FROM", "Numquants <hello@mg.example.com>")
 
 
 def _ok_response():
@@ -53,7 +53,7 @@ def test_send_email_posts_to_mailgun():
         assert data["subject"] == "Hi"
         assert data["text"] == "hello"
         assert data["html"] == "<p>hello</p>"
-        assert data["from"] == "Zenkos <hello@mg.example.com>"
+        assert data["from"] == "Numquants <hello@mg.example.com>"
 
 
 def test_send_email_missing_config_raises(monkeypatch: pytest.MonkeyPatch):
@@ -97,20 +97,20 @@ def test_welcome_email_includes_name_and_url():
     subject, text, html = welcome_email(
         recipient_email="user@example.com",
         full_name="Jane Doe",
-        app_url="https://zenkos.example.com",
+        app_url="https://numquants.example.com",
     )
     assert "Welcome" in subject
     assert "Jane Doe" in text
-    assert "https://zenkos.example.com/pricing" in text
+    assert "https://numquants.example.com/pricing" in text
     assert "Jane Doe" in html
-    assert "https://zenkos.example.com/pricing" in html
+    assert "https://numquants.example.com/pricing" in html
 
 
 def test_welcome_email_falls_back_to_email_prefix():
     _, text, _ = welcome_email(
         recipient_email="alice@example.com",
         full_name=None,
-        app_url="https://zenkos.example.com",
+        app_url="https://numquants.example.com",
     )
     assert "Hi alice," in text
 
@@ -118,10 +118,10 @@ def test_welcome_email_falls_back_to_email_prefix():
 def test_password_reset_email_carries_link_and_ttl():
     subject, text, html = password_reset_email(
         recipient_email="user@example.com",
-        reset_link="https://zenkos.example.com/?reset_token=abc",
+        reset_link="https://numquants.example.com/?reset_token=abc",
         ttl_minutes=60,
     )
     assert "Reset" in subject
-    assert "https://zenkos.example.com/?reset_token=abc" in text
+    assert "https://numquants.example.com/?reset_token=abc" in text
     assert "60 minutes" in text
-    assert "https://zenkos.example.com/?reset_token=abc" in html
+    assert "https://numquants.example.com/?reset_token=abc" in html

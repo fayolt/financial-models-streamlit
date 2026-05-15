@@ -8,11 +8,11 @@ from __future__ import annotations
 
 def _html_shell(body_html: str) -> str:
     return f"""<!doctype html>
-<html><head><meta charset="utf-8"><title>Zenkos</title></head>
+<html><head><meta charset="utf-8"><title>Numquants</title></head>
 <body style="font-family: -apple-system, Helvetica, Arial, sans-serif; color: #1f2937; max-width: 560px; margin: 24px auto; padding: 0 16px; line-height: 1.5;">
 {body_html}
 <hr style="border:none; border-top:1px solid #e5e7eb; margin-top: 32px;">
-<p style="font-size: 12px; color: #6b7280;">Zenkos Financial Models</p>
+<p style="font-size: 12px; color: #6b7280;">Numquants Financial Models</p>
 </body></html>"""
 
 
@@ -23,20 +23,20 @@ def welcome_email(
     app_url: str,
 ) -> tuple[str, str, str]:
     display_name = full_name or recipient_email.split("@", 1)[0]
-    subject = "Welcome to Zenkos Financial Models"
+    subject = "Welcome to Numquants Financial Models"
     text = f"""Hi {display_name},
 
-Your Zenkos account is ready. You're signed in on the Free tier — you can view all 7 financial models in the browser.
+Your Numquants account is ready. You're signed in on the Free tier — you can view all 7 financial models in the browser.
 
 To unlock report exports (XLSX on Pro, PDF + AI commentary on Enterprise), pick a plan from the Pricing page:
 {app_url.rstrip('/')}/pricing
 
 Reply to this email if you hit any issues.
 
-— The Zenkos team
+— The Numquants team
 """
     html = _html_shell(
-        f"""<h2 style="margin-bottom:8px;">Welcome to Zenkos</h2>
+        f"""<h2 style="margin-bottom:8px;">Welcome to Numquants</h2>
 <p>Hi {display_name},</p>
 <p>Your account is ready. You're on the <strong>Free</strong> tier — view all 7 financial models in the browser.</p>
 <p>To unlock report exports, pick a plan on the Pricing page:</p>
@@ -48,18 +48,18 @@ Reply to this email if you hit any issues.
 
 
 def password_changed_email(*, recipient_email: str) -> tuple[str, str, str]:
-    subject = "Your Zenkos password was changed"
-    text = f"""The password for your Zenkos account ({recipient_email}) was just changed.
+    subject = "Your Numquants password was changed"
+    text = f"""The password for your Numquants account ({recipient_email}) was just changed.
 
 If this was you, no action is needed.
 
 If you didn't change your password, reply to this email immediately so we can help secure your account.
 
-— Zenkos Security
+— Numquants Security
 """
     html = _html_shell(
         f"""<h2 style="margin-bottom:8px;">Password changed</h2>
-<p>The password for your Zenkos account (<strong>{recipient_email}</strong>) was just changed.</p>
+<p>The password for your Numquants account (<strong>{recipient_email}</strong>) was just changed.</p>
 <p>If this was you, no action is needed.</p>
 <p style="color:#b91c1c;">If you didn't change your password, reply to this email immediately so we can help secure your account.</p>"""
     )
@@ -67,18 +67,18 @@ If you didn't change your password, reply to this email immediately so we can he
 
 
 def account_deleted_email(*, recipient_email: str) -> tuple[str, str, str]:
-    subject = "Your Zenkos account has been deleted"
-    text = f"""The Zenkos account for {recipient_email} has been deleted at your request. All saved data has been removed.
+    subject = "Your Numquants account has been deleted"
+    text = f"""The Numquants account for {recipient_email} has been deleted at your request. All saved data has been removed.
 
 Any active subscription has been cancelled — you will not be billed again.
 
 If you didn't request this, reply to this email immediately.
 
-— Zenkos Security
+— Numquants Security
 """
     html = _html_shell(
         f"""<h2 style="margin-bottom:8px;">Account deleted</h2>
-<p>The Zenkos account for <strong>{recipient_email}</strong> has been deleted at your request. All saved data has been removed.</p>
+<p>The Numquants account for <strong>{recipient_email}</strong> has been deleted at your request. All saved data has been removed.</p>
 <p>Any active subscription has been cancelled — you will not be billed again.</p>
 <p style="color:#b91c1c;">If you didn't request this, reply to this email immediately.</p>"""
     )
@@ -91,7 +91,7 @@ def password_reset_email(
     reset_link: str,
     ttl_minutes: int = 60,
 ) -> tuple[str, str, str]:
-    subject = "Reset your Zenkos password"
+    subject = "Reset your Numquants password"
     text = f"""Someone (hopefully you) requested a password reset for {recipient_email}.
 
 If it was you, follow this link within the next {ttl_minutes} minutes to set a new password:
@@ -100,7 +100,7 @@ If it was you, follow this link within the next {ttl_minutes} minutes to set a n
 
 If it wasn't you, you can safely ignore this email — your password won't be changed.
 
-— Zenkos Security
+— Numquants Security
 """
     html = _html_shell(
         f"""<h2 style="margin-bottom:8px;">Reset your password</h2>
