@@ -71,6 +71,41 @@ def _hydrate_user_from_cookie() -> None:
 _hydrate_user_from_cookie()
 
 
+# --- TEMPORARY cookie debug — remove once refresh-persistence is confirmed ---
+def _cookie_debug_panel() -> None:
+    with st.sidebar.expander("🔍 Cookie debug", expanded=True):
+        from app.auth.cookie import COOKIE_NAME
+
+        try:
+            ctx_cookies = dict(st.context.cookies)
+            st.caption(
+                f"st.context.cookies has {len(ctx_cookies)} entr(ies); "
+                f"keys: {sorted(ctx_cookies.keys())}"
+            )
+            value = ctx_cookies.get(COOKIE_NAME)
+            st.caption(
+                f"`{COOKIE_NAME}` via st.context.cookies: "
+                f"{'PRESENT (' + value[:16] + '…)' if value else 'MISSING'}"
+            )
+        except Exception as e:
+            st.caption(f"st.context.cookies error: {e!r}")
+
+        try:
+            cookie_hdr = st.context.headers.get("Cookie", "") or "(empty)"
+            st.caption(f"Cookie header: `{cookie_hdr[:200]}`")
+        except Exception as e:
+            st.caption(f"st.context.headers error: {e!r}")
+
+        st.caption(
+            f"st.session_state.user: "
+            f"{'set (' + st.session_state.user['email'] + ')' if 'user' in st.session_state else 'absent'}"
+        )
+
+
+_cookie_debug_panel()
+# --- end cookie debug ---
+
+
 # Reset-password flow uses a special URL routed by ?reset_token=… in the
 # query string. It bypasses normal navigation so an unauthenticated visitor
 # arriving from an emailed link lands directly on the form.
