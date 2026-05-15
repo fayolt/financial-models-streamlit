@@ -136,6 +136,9 @@ class ChickenFarmingPlugin:
         if irr_val is not None:
             col2.metric("IRR", f"{float(irr_val) * 100:,.2f}%")
 
+        from app.reports.ui import render_report_downloads
+        render_report_downloads(self, inputs, results, user)
+
     def generate_report(
         self,
         inputs: BaseModel,

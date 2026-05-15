@@ -325,6 +325,9 @@ class BiotechPlugin:
             f"{results.summary['peak_revenue_modelled']:,.0f}",
         )
 
+        from app.reports.ui import render_report_downloads
+        render_report_downloads(self, inputs, results, user)
+
     def generate_report(
         self,
         inputs: BaseModel,

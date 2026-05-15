@@ -127,6 +127,9 @@ class PharmaPlugin:
                     position = idx.index(metric_name)
                     st.metric(metric_name, f"{values[position]:,.2f}")
 
+        from app.reports.ui import render_report_downloads
+        render_report_downloads(self, inputs, results, user)
+
     def generate_report(
         self,
         inputs: BaseModel,

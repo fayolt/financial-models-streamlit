@@ -211,6 +211,9 @@ class CassavaEthanolPlugin:
             else "—",
         )
 
+        from app.reports.ui import render_report_downloads
+        render_report_downloads(self, inputs, results, user)
+
     def generate_report(
         self,
         inputs: BaseModel,

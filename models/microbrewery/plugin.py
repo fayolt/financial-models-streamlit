@@ -200,6 +200,9 @@ class MicrobreweryPlugin:
         ev = results.valuation.get("enterprise_value", 0.0)
         st.metric("Enterprise Value (USD)", f"{ev:,.0f}")
 
+        from app.reports.ui import render_report_downloads
+        render_report_downloads(self, inputs, results, user)
+
     def generate_report(
         self,
         inputs: BaseModel,
