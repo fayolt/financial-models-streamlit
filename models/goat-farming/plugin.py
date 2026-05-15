@@ -130,7 +130,7 @@ class GoatFarmingPlugin:
     )
     icon: str | None = "🐐"
     minimum_tier: SubscriptionTier = SubscriptionTier.FREE
-    supported_formats: set[Format] = {Format.XLSX, Format.CSV}
+    supported_formats: set[Format] = {Format.XLSX, Format.CSV, Format.PDF}
     input_schema: type[BaseModel] = GoatFarmingInputs
     results_schema: type[ModelResults] = GoatFarmingResults
 
@@ -229,7 +229,90 @@ class GoatFarmingPlugin:
         if Format.CSV in formats:
             out[Format.CSV] = results._scenario_df.to_csv().encode("utf-8")
 
+        if Format.PDF in formats:
+            out[Format.PDF] = self._build_pdf(results, options, user)
+
         return out
+
+    def _build_pdf(
+        self,
+        results: "GoatFarmingResults",
+        options: ReportOptions,
+        user: User,
+    ) -> bytes:
+        from app.reports.pdf_style import (
+            body,
+            build_pdf,
+            dataframe_table,
+            heading,
+            metric_grid,
+        )
+        from reportlab.platypus import PageBreak
+
+        sections: list = [
+            heading("Executive summary"),
+            body(self.description),
+        ]
+
+        kpis_df = results._kpis_df
+        if kpis_df is None or kpis_df.empty:
+            sections.append(body("KPIs not available"))
+        else:
+            headline_rows = kpis_df.head(6)
+            first_col = headline_rows.columns[0]
+            metrics: dict[str, str] = {}
+            for label, value in headline_rows[first_col].items():
+                try:
+                    metrics[str(label)] = f"{float(value) * 100:.2f}%"
+                except (TypeError, ValueError):
+                    metrics[str(label)] = str(value)
+            if metrics:
+                sections.append(metric_grid(metrics))
+            else:
+                sections.append(body("KPIs not available"))
+
+        sections.append(PageBreak())
+
+        scenario_df = results._scenario_df
+        sections.extend(
+            dataframe_table(
+                scenario_df, title="Scenario timeline", max_rows=12,
+            )
+        )
+
+        if kpis_df is not None and not kpis_df.empty:
+            sections.extend(
+                dataframe_table(kpis_df, title="Annual KPIs", max_rows=18)
+            )
+
+        statements = (
+            ("Statement of Financial Performance",
+             results._model.statement_of_financial_performance),
+            ("Statement of Financial Position",
+             results._model.statement_of_financial_position),
+            ("Statement of Cash Flows",
+             results._model.statement_of_cash_flow),
+        )
+        for title, builder in statements:
+            try:
+                df = builder(scenario_df, annual=True)
+            except (ValueError, KeyError):
+                continue
+            sections.extend(dataframe_table(df, title=title, max_rows=18))
+
+        if results._break_even_df is not None and not results._break_even_df.empty:
+            sections.extend(
+                dataframe_table(
+                    results._break_even_df, title="Break-even", max_rows=18,
+                )
+            )
+
+        return build_pdf(
+            title=self.name,
+            subtitle=f"Prepared for {user.email}",
+            sections=sections,
+            watermark=options.watermark,
+        )
 
 
 MODEL: ModelPlugin = GoatFarmingPlugin()

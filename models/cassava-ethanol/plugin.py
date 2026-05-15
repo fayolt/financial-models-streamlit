@@ -153,7 +153,7 @@ class CassavaEthanolPlugin:
     )
     icon: str | None = "🌽"
     minimum_tier: SubscriptionTier = SubscriptionTier.FREE
-    supported_formats: set[Format] = {Format.XLSX}
+    supported_formats: set[Format] = {Format.XLSX, Format.PDF}
     input_schema: type[BaseModel] = CassavaEthanolInputs
     results_schema: type[ModelResults] = CassavaEthanolResults
 
@@ -273,7 +273,76 @@ class CassavaEthanolPlugin:
                     ).to_excel(writer, sheet_name="Key Metrics", index=False)
                 out[Format.XLSX] = buf.getvalue()
 
+        if Format.PDF in formats:
+            out[Format.PDF] = self._build_pdf(results, options, user)
+
         return out
+
+    def _build_pdf(
+        self,
+        results: "CassavaEthanolResults",
+        options: ReportOptions,
+        user: User,
+    ) -> bytes:
+        from app.reports.pdf_style import (
+            body,
+            build_pdf,
+            dataframe_table,
+            heading,
+            metric_grid,
+        )
+        from reportlab.platypus import PageBreak
+
+        def _fmt_usd(v: Any) -> str:
+            if isinstance(v, (int, float)) and not isinstance(v, bool):
+                return f"USD {v:,.0f}"
+            return "n/a"
+
+        def _fmt_pct(v: Any) -> str:
+            if isinstance(v, (int, float)) and not isinstance(v, bool):
+                return f"{v * 100:.2f}%"
+            return "n/a"
+
+        metrics = {
+            "Project NPV": _fmt_usd(results.metrics.get("Project NPV")),
+            "Project IRR": _fmt_pct(results.metrics.get("Project IRR")),
+            "Equity IRR": _fmt_pct(results.metrics.get("Equity IRR")),
+        }
+
+        build = results._build or {}
+        financials = build.get("financials")
+        revenue = build.get("revenue")
+
+        sections: list = [
+            heading("Executive summary"),
+            body(self.description),
+            metric_grid(metrics),
+            PageBreak(),
+        ]
+
+        if financials is not None and hasattr(financials, "income_annual"):
+            sections += dataframe_table(
+                financials.income_annual, title="Annual income statement"
+            )
+        if financials is not None and hasattr(financials, "cashflow_annual"):
+            sections += dataframe_table(
+                financials.cashflow_annual, title="Annual cash flow"
+            )
+        if financials is not None and hasattr(financials, "balance_annual"):
+            sections += dataframe_table(
+                financials.balance_annual, title="Annual balance sheet"
+            )
+        if revenue is not None and hasattr(revenue, "annual"):
+            sections += dataframe_table(
+                revenue.annual, title="Revenue forecast"
+            )
+
+        return build_pdf(
+            title=self.name,
+            subtitle=f"Prepared for {user.email}",
+            sections=sections,
+            watermark=options.watermark,
+        )
 
 
 MODEL: ModelPlugin = CassavaEthanolPlugin()

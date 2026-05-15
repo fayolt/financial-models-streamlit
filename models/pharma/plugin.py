@@ -87,7 +87,7 @@ class PharmaPlugin:
     )
     icon: str | None = "💊"
     minimum_tier: SubscriptionTier = SubscriptionTier.FREE
-    supported_formats: set[Format] = {Format.XLSX}
+    supported_formats: set[Format] = {Format.XLSX, Format.PDF}
     input_schema: type[BaseModel] = PharmaInputs
     results_schema: type[ModelResults] = PharmaResults
 
@@ -160,7 +160,83 @@ class PharmaPlugin:
                 sections, "excel", report_name="pharma_financial_report"
             )
             out[Format.XLSX] = data
+        if Format.PDF in formats:
+            out[Format.PDF] = self._build_pdf(outputs, results, options, user)
         return out
+
+    def _build_pdf(
+        self,
+        outputs: Any,
+        results: "PharmaResults",
+        options: ReportOptions,
+        user: User,
+    ) -> bytes:
+        from app.reports.pdf_style import (
+            body,
+            build_pdf,
+            dataframe_table,
+            heading,
+            metric_grid,
+        )
+        from reportlab.platypus import PageBreak
+
+        summary = results.summary_metrics or {}
+        idx = summary.get("index", []) or []
+        values = summary.get("columns", {}).get("Value", []) or []
+
+        def _lookup(name: str):
+            if name in idx:
+                pos = idx.index(name)
+                if pos < len(values):
+                    return values[pos]
+            return None
+
+        metrics: dict[str, str] = {}
+        npv = _lookup("NPV")
+        if isinstance(npv, (int, float)):
+            metrics["NPV"] = f"USD {npv:,.0f}"
+        irr = _lookup("IRR")
+        if isinstance(irr, (int, float)):
+            # IRR is typically stored as a fraction (e.g. 0.18) or percent (e.g. 18).
+            metrics["IRR"] = (
+                f"{irr * 100:.2f}%" if abs(irr) <= 1 else f"{irr:.2f}%"
+            )
+        payback = _lookup("Payback Period")
+        if isinstance(payback, (int, float)):
+            metrics["Payback Period"] = f"{payback:.1f} yrs"
+
+        sections: list = [
+            heading("Executive summary"),
+            body(self.description),
+        ]
+        if metrics:
+            sections.append(metric_grid(metrics))
+        sections.append(PageBreak())
+
+        table_specs = [
+            ("Annual income statement", getattr(outputs, "income_statement", None)),
+            ("Annual cash flow", getattr(outputs, "cash_flow", None)),
+            ("Annual balance sheet", getattr(outputs, "balance_sheet", None)),
+        ]
+        rendered_any = False
+        for title, table in table_specs:
+            if table is None:
+                continue
+            try:
+                df = table.to_frame()
+            except Exception:
+                continue
+            sections.extend(dataframe_table(df, title=title, max_rows=12))
+            rendered_any = True
+        if not rendered_any:
+            sections.append(body("Detailed financials available in XLSX export."))
+
+        return build_pdf(
+            title=self.name,
+            subtitle=f"Prepared for {user.email}",
+            sections=sections,
+            watermark=options.watermark,
+        )
 
 
 MODEL: ModelPlugin = PharmaPlugin()

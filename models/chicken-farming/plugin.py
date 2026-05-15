@@ -96,7 +96,7 @@ class ChickenFarmingPlugin:
     )
     icon: str | None = "🐔"
     minimum_tier: SubscriptionTier = SubscriptionTier.FREE
-    supported_formats: set[Format] = {Format.XLSX}
+    supported_formats: set[Format] = {Format.XLSX, Format.PDF}
     input_schema: type[BaseModel] = ChickenFarmingInputs
     results_schema: type[ModelResults] = ChickenFarmingResults
 
@@ -220,7 +220,91 @@ class ChickenFarmingPlugin:
 
             out[Format.XLSX] = buf.getvalue()
 
+        if Format.PDF in formats:
+            out[Format.PDF] = self._build_pdf(raw, results, options, user)
+
         return out
+
+    def _build_pdf(
+        self,
+        raw: dict[str, Any],
+        results: "ChickenFarmingResults",
+        options: ReportOptions,
+        user: User,
+    ) -> bytes:
+        from app.reports.pdf_style import (
+            body,
+            build_pdf,
+            dataframe_table,
+            heading,
+            metric_grid,
+        )
+        from reportlab.platypus import PageBreak
+
+        def _fmt_usd(v: Any) -> str:
+            if isinstance(v, (int, float)) and v == v:
+                return f"{float(v):,.0f}"
+            return "n/a"
+
+        def _fmt_pct(v: Any) -> str:
+            if isinstance(v, (int, float)) and v == v:
+                return f"{float(v) * 100:.2f}%"
+            return "n/a"
+
+        val = results.valuation
+        metrics = {
+            "NPV (USD)": _fmt_usd(val.get("npv")),
+            "IRR": _fmt_pct(val.get("irr")),
+            "Initial Investment (USD)": _fmt_usd(val.get("initial_investment")),
+            "Discount Rate": _fmt_pct(val.get("discount_rate")),
+        }
+
+        annual = raw.get("annual")
+        annual_record = (
+            asdict(annual) if is_dataclass(annual)
+            else (dict(annual) if annual is not None else {})
+        )
+        annual_df = pd.DataFrame([annual_record]) if annual_record else pd.DataFrame()
+
+        statements = raw.get("financial_statements") or {}
+        income_df = _rows_to_df(statements.get("income_statement"))
+        cashflow_stmt_df = _rows_to_df(statements.get("cash_flow_statement"))
+
+        sections: list = [
+            heading("Executive summary"),
+            body(self.description),
+            metric_grid(metrics),
+            PageBreak(),
+            heading("Annual summary"),
+            *(
+                dataframe_table(annual_df.T.reset_index().rename(
+                    columns={"index": "metric", 0: "value"}
+                ), max_rows=24)
+                if not annual_df.empty
+                else [body("Annual summary not available.")]
+            ),
+            PageBreak(),
+            heading("Income statement"),
+            *(
+                dataframe_table(income_df, max_rows=16)
+                if not income_df.empty
+                else [body("Income statement not available.")]
+            ),
+            PageBreak(),
+            heading("Cash flow statement"),
+            *(
+                dataframe_table(cashflow_stmt_df, max_rows=16)
+                if not cashflow_stmt_df.empty
+                else [body("Cash flow statement not available.")]
+            ),
+        ]
+
+        return build_pdf(
+            title=self.name,
+            subtitle=f"Prepared for {user.email}",
+            sections=sections,
+            watermark=options.watermark,
+        )
 
 
 MODEL: ModelPlugin = ChickenFarmingPlugin()

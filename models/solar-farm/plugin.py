@@ -101,7 +101,7 @@ class SolarFarmPlugin:
     )
     icon: str | None = "☀️"
     minimum_tier: SubscriptionTier = SubscriptionTier.FREE
-    supported_formats: set[Format] = {Format.XLSX}
+    supported_formats: set[Format] = {Format.XLSX, Format.PDF}
     input_schema: type[BaseModel] = SolarFarmInputs
     results_schema: type[ModelResults] = SolarFarmResults
 
@@ -212,7 +212,112 @@ class SolarFarmPlugin:
                         except Exception:
                             continue
             out[Format.XLSX] = buf.getvalue()
+        if Format.PDF in formats:
+            out[Format.PDF] = self._build_pdf(results, options, user)
         return out
+
+    def _build_pdf(
+        self,
+        results: "SolarFarmResults",
+        options: ReportOptions,
+        user: User,
+    ) -> bytes:
+        from app.reports.pdf_style import (
+            body,
+            build_pdf,
+            dataframe_table,
+            heading,
+            metric_grid,
+        )
+        from reportlab.platypus import PageBreak
+
+        def _fmt_usd(v) -> str:
+            if not isinstance(v, (int, float)) or v != v:
+                return "n/a"
+            return f"USD {v:,.0f}"
+
+        def _fmt_pct(v) -> str:
+            if not isinstance(v, (int, float)) or v != v:
+                return "n/a"
+            return f"{v * 100:.2f}%"
+
+        def _fmt_dscr(v) -> str:
+            if not isinstance(v, (int, float)) or v != v:
+                return "n/a"
+            return f"{v:.2f}x"
+
+        def _fmt_years(v) -> str:
+            if not isinstance(v, (int, float)) or v != v:
+                return "n/a"
+            return f"{v / 12:.1f} yrs"
+
+        val = results.valuation
+        metrics = {
+            "Project NPV": _fmt_usd(val.get("project_npv")),
+            "Project IRR": _fmt_pct(val.get("project_irr")),
+            "Payback": _fmt_years(val.get("project_payback_months")),
+            "Min DSCR": _fmt_dscr(val.get("min_dscr")),
+        }
+
+        outputs = results._outputs
+        annual = getattr(outputs, "annual_summary", None) if outputs is not None else None
+        monthly = getattr(outputs, "monthly_results", None) if outputs is not None else None
+
+        revenue_cols = [
+            c for c in (
+                "revenue_total", "total_opex", "ebitda", "depreciation",
+                "ebit", "tax_payment", "net_income",
+            ) if annual is not None and c in annual.columns
+        ]
+        position_cols = [
+            c for c in (
+                "cfads", "debt_service", "dscr", "debt_free_cash_flow",
+                "equity_cash_flow", "capex",
+            ) if annual is not None and c in annual.columns
+        ]
+
+        metrics_df = None
+        if results.metrics:
+            metrics_df = (
+                pd.Series(results.metrics, name="value")
+                .to_frame()
+                .rename_axis("metric")
+                .reset_index()
+            )
+
+        sections = [
+            heading("Executive summary"),
+            body(self.description),
+            metric_grid(metrics, columns=4),
+            PageBreak(),
+            heading("Annual revenue & P&L summary"),
+            *(
+                dataframe_table(annual[revenue_cols], max_rows=15)
+                if annual is not None and revenue_cols
+                else [body("Annual P&L data not available.")]
+            ),
+            PageBreak(),
+            heading("Annual cash flow & coverage"),
+            *(
+                dataframe_table(annual[position_cols], max_rows=15)
+                if annual is not None and position_cols
+                else [body("Annual cash flow data not available.")]
+            ),
+            PageBreak(),
+            heading("Investor metrics dashboard"),
+            *(
+                dataframe_table(metrics_df, max_rows=30)
+                if metrics_df is not None
+                else [body("Metrics not available.")]
+            ),
+        ]
+
+        return build_pdf(
+            title=self.name,
+            subtitle=f"Prepared for {user.email}",
+            sections=sections,
+            watermark=options.watermark,
+        )
 
 
 MODEL: ModelPlugin = SolarFarmPlugin()

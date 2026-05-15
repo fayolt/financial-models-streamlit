@@ -290,8 +290,8 @@ class BiotechPlugin:
     )
     icon: str | None = "🧬"
     minimum_tier: SubscriptionTier = SubscriptionTier.FREE
-    # Phase 4 will add Format.PDF, Format.DOCX, plus AI commentary via RAG.
-    supported_formats: set[Format] = {Format.XLSX}
+    # Phase 4 will add Format.DOCX, plus AI commentary via RAG.
+    supported_formats: set[Format] = {Format.XLSX, Format.PDF}
     input_schema: type[BaseModel] = BiotechInputs
     results_schema: type[ModelResults] = BiotechResults
 
@@ -402,7 +402,104 @@ class BiotechPlugin:
                     df.index.name = "Year"
                     df.to_excel(writer, sheet_name=sheet)
             out[Format.XLSX] = buf.getvalue()
+        if Format.PDF in formats:
+            out[Format.PDF] = self._build_pdf(results, options, user)
         return out
+
+    def _build_pdf(
+        self,
+        results: "BiotechResults",
+        options: ReportOptions,
+        user: User,
+    ) -> bytes:
+        from app.reports.pdf_style import (
+            body,
+            build_pdf,
+            dataframe_table,
+            heading,
+            metric_grid,
+        )
+        from reportlab.platypus import PageBreak
+
+        summary = results.summary
+        rnpv = summary.get("rnpv")
+        irr = summary.get("irr")
+        peak_rev = summary.get("peak_revenue_modelled")
+
+        def _fmt_usd(v) -> str:
+            return f"USD {v:,.0f}" if isinstance(v, (int, float)) else "n/a"
+
+        metrics = {
+            "rNPV": _fmt_usd(rnpv),
+            "IRR": f"{irr * 100:.2f}%" if isinstance(irr, (int, float)) else "n/a",
+            "Peak revenue (modelled)": _fmt_usd(peak_rev),
+        }
+
+        vr: ValuationResult | None = results._valuation_result
+        cons_df = None
+        dcf_df = None
+        per_product_df = None
+        if vr is not None:
+            cons = vr.consolidated.copy()
+            cons.index.name = "Year"
+            pnl_cols = [
+                c for c in (
+                    "revenue", "cogs", "sales_marketing", "gna",
+                    "ebitda", "ebit", "nopat",
+                ) if c in cons.columns
+            ]
+            if pnl_cols:
+                cons_df = cons[pnl_cols]
+
+            dcf = vr.dcf_table.copy()
+            dcf.index.name = "Year"
+            dcf_cols = [
+                c for c in ("fcff", "discount_factor", "pv_fcff", "terminal_value")
+                if c in dcf.columns
+            ]
+            dcf_df = dcf[dcf_cols] if dcf_cols else dcf
+
+            if vr.per_product:
+                first_prod = next(iter(vr.per_product))
+                pdf_df = vr.per_product[first_prod].copy()
+                pdf_df.index.name = "Year"
+                prod_cols = [
+                    c for c in ("revenue", "ebitda", "fcff") if c in pdf_df.columns
+                ]
+                if prod_cols:
+                    per_product_df = pdf_df[prod_cols]
+
+        sections = [
+            heading("Executive summary"),
+            body(self.description),
+            metric_grid(metrics),
+            PageBreak(),
+            heading("Consolidated P&L"),
+            *(
+                dataframe_table(cons_df, max_rows=14)
+                if cons_df is not None
+                else [body("Consolidated P&L not available.")]
+            ),
+            PageBreak(),
+            heading("DCF schedule"),
+            *(
+                dataframe_table(dcf_df, max_rows=14)
+                if dcf_df is not None
+                else [body("DCF schedule not available.")]
+            ),
+            *(
+                [heading("Lead asset summary"), *dataframe_table(per_product_df, max_rows=14)]
+                if per_product_df is not None
+                else []
+            ),
+        ]
+
+        return build_pdf(
+            title=self.name,
+            subtitle=f"Prepared for {user.email}",
+            sections=sections,
+            watermark=options.watermark,
+        )
 
 
 MODEL: ModelPlugin = BiotechPlugin()

@@ -167,7 +167,7 @@ class MicrobreweryPlugin:
     )
     icon: str | None = "🍺"
     minimum_tier: SubscriptionTier = SubscriptionTier.FREE
-    supported_formats: set[Format] = {Format.XLSX}
+    supported_formats: set[Format] = {Format.XLSX, Format.PDF}
     input_schema: type[BaseModel] = MicrobreweryInputs
     results_schema: type[ModelResults] = MicrobreweryComputeResults
 
@@ -229,7 +229,76 @@ class MicrobreweryPlugin:
             with pd.ExcelWriter(buf, engine="openpyxl") as writer:
                 write_comprehensive_excel_report(raw, writer)
             out[Format.XLSX] = buf.getvalue()
+        if Format.PDF in formats:
+            out[Format.PDF] = self._build_pdf(raw, results, options, user)
         return out
+
+    def _build_pdf(
+        self,
+        raw,
+        results: "MicrobreweryComputeResults",
+        options: ReportOptions,
+        user: User,
+    ) -> bytes:
+        from app.reports.pdf_style import (
+            body,
+            build_pdf,
+            dataframe_table,
+            heading,
+            metric_grid,
+        )
+        from reportlab.platypus import PageBreak
+
+        val = results.valuation
+        metrics = {
+            "Enterprise Value (USD)": f"{val.get('enterprise_value', 0):,.0f}",
+            "Project NPV (USD)": f"{val.get('project_npv', val.get('npv', 0)):,.0f}",
+            "Equity Value (USD)": f"{val.get('equity_value', 0):,.0f}",
+        }
+        irr = val.get("project_irr", val.get("irr"))
+        if isinstance(irr, (int, float)):
+            metrics["Project IRR"] = f"{irr * 100:.2f}%"
+
+        annual = raw.annual.copy() if raw is not None else None
+        perf_cols = [
+            c for c in (
+                "total_revenue", "direct_costs", "gross_profit",
+                "opex", "ebitda", "net_income",
+            ) if annual is not None and c in annual.columns
+        ]
+        position_cols = [
+            c for c in (
+                "cash", "current_assets", "net_fixed_assets", "total_assets",
+                "debt_ending_balance", "equity",
+            ) if annual is not None and c in annual.columns
+        ]
+
+        sections = [
+            heading("Executive summary"),
+            body(self.description),
+            metric_grid(metrics),
+            PageBreak(),
+            heading("Annual income statement"),
+            *(
+                dataframe_table(annual[perf_cols], max_rows=12)
+                if annual is not None and perf_cols
+                else [body("Annual financials not available.")]
+            ),
+            PageBreak(),
+            heading("Annual financial position"),
+            *(
+                dataframe_table(annual[position_cols], max_rows=12)
+                if annual is not None and position_cols
+                else [body("Position data not available.")]
+            ),
+        ]
+
+        return build_pdf(
+            title=self.name,
+            subtitle=f"Prepared for {user.email}",
+            sections=sections,
+            watermark=options.watermark,
+        )
 
 
 MODEL: ModelPlugin = MicrobreweryPlugin()
