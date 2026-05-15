@@ -66,7 +66,12 @@ def test_token_expired_rejected():
 
 def test_token_tampered_rejected():
     token, _ = issue_session_token(user_id=uuid4(), email="x@y.com")
-    tampered = token[:-1] + ("a" if token[-1] != "a" else "b")
+    header, payload, sig = token.split(".")
+    # Flip the FIRST signature byte rather than the last — the last char's
+    # bits can fall in base64url padding that PyJWT silently drops, making
+    # last-char tampering occasionally a no-op.
+    swap = "A" if sig[0] != "A" else "B"
+    tampered = f"{header}.{payload}.{swap}{sig[1:]}"
     with pytest.raises(InvalidTokenError):
         verify_session_token(tampered)
 

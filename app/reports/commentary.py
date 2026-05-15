@@ -1,11 +1,10 @@
 """LLM-generated executive commentary for financial-model outputs.
 
-Used by plugins that opt in (currently biotech and chicken-farming).
-Reads OPENAI_API_KEY and OPENAI_MODEL at call time so tests can patch.
+Two providers are wired: OpenAI (default) and Anthropic. The active provider
+is picked by `LLM_PROVIDER` env var ("openai" or "anthropic"). All env vars
+are read at call time so tests can monkey-patch them per case.
 
-This is an Enterprise-tier feature. The orchestrator decides whether to
-expose the "Generate AI commentary" button based on user.tier; this
-module is a thin wrapper that doesn't enforce gating itself.
+Used by plugins that opt in (currently biotech and chicken-farming).
 """
 from __future__ import annotations
 
@@ -23,22 +22,15 @@ SYSTEM_PROMPT = """You are a senior financial analyst writing executive commenta
 Be concise (target ~200 words). Interpret the numbers rather than restating them verbatim. Write flowing prose, not bullet lists. Avoid markdown formatting."""
 
 
+_VALID_PROVIDERS = ("openai", "anthropic")
+
+
 class CommentaryError(RuntimeError):
     """Raised when LLM commentary generation fails."""
 
 
-def _client():
-    """Create an OpenAI client, reading the API key at call time."""
-    from openai import OpenAI
-
-    api_key = os.environ.get("OPENAI_API_KEY", "")
-    if not api_key:
-        raise CommentaryError("OPENAI_API_KEY is not set")
-    return OpenAI(api_key=api_key)
-
-
-def _model_name() -> str:
-    return os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
+def _provider() -> str:
+    return os.environ.get("LLM_PROVIDER", "openai").strip().lower()
 
 
 def generate_commentary(
@@ -51,8 +43,8 @@ def generate_commentary(
     """Generate executive commentary for one plugin's results.
 
     `summary` should be a small dict of label→value pairs describing the
-    headline metrics and the key inputs. Keep it focused; LLMs do not
-    benefit from raw data dumps.
+    headline metrics and key inputs. Don't dump raw data — LLMs do better
+    with curated context.
     """
     user_prompt = (
         f"Model: {plugin_name}\n"
@@ -62,10 +54,35 @@ def generate_commentary(
         f"Write the commentary."
     )
 
+    provider = _provider()
+    if provider == "openai":
+        return _call_openai(user_prompt, max_tokens)
+    if provider == "anthropic":
+        return _call_anthropic(user_prompt, max_tokens)
+    raise CommentaryError(
+        f"Unknown LLM_PROVIDER: {provider!r}. "
+        f"Expected one of: {', '.join(_VALID_PROVIDERS)}."
+    )
+
+
+# --- OpenAI -----------------------------------------------------------------
+
+
+def _openai_client():
+    from openai import OpenAI
+
+    api_key = os.environ.get("OPENAI_API_KEY", "")
+    if not api_key:
+        raise CommentaryError("OPENAI_API_KEY is not set")
+    return OpenAI(api_key=api_key)
+
+
+def _call_openai(user_prompt: str, max_tokens: int) -> str:
+    model = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
     try:
-        client = _client()
+        client = _openai_client()
         resp = client.chat.completions.create(
-            model=_model_name(),
+            model=model,
             max_tokens=max_tokens,
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
@@ -75,9 +92,44 @@ def generate_commentary(
     except CommentaryError:
         raise
     except Exception as e:
-        raise CommentaryError(f"LLM call failed: {e}") from e
+        raise CommentaryError(f"OpenAI call failed: {e}") from e
 
     text = (resp.choices[0].message.content or "").strip()
     if not text:
-        raise CommentaryError("LLM returned an empty response.")
+        raise CommentaryError("OpenAI returned an empty response.")
+    return text
+
+
+# --- Anthropic --------------------------------------------------------------
+
+
+def _anthropic_client():
+    from anthropic import Anthropic
+
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    if not api_key:
+        raise CommentaryError("ANTHROPIC_API_KEY is not set")
+    return Anthropic(api_key=api_key)
+
+
+def _call_anthropic(user_prompt: str, max_tokens: int) -> str:
+    model = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-6")
+    try:
+        client = _anthropic_client()
+        msg = client.messages.create(
+            model=model,
+            max_tokens=max_tokens,
+            system=SYSTEM_PROMPT,
+            messages=[{"role": "user", "content": user_prompt}],
+        )
+    except CommentaryError:
+        raise
+    except Exception as e:
+        raise CommentaryError(f"Anthropic call failed: {e}") from e
+
+    # Anthropic returns a list of content blocks; only TextBlocks carry .text.
+    parts = [getattr(b, "text", "") for b in (msg.content or [])]
+    text = "\n".join(p for p in parts if p).strip()
+    if not text:
+        raise CommentaryError("Anthropic returned an empty response.")
     return text
