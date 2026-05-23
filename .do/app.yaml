@@ -1,95 +1,125 @@
 name: numquants-staging
-region: nyc
+region: fra
 
-services:
-  - name: web
-    github:
-      repo: fayolt/financial-models-streamlit
-      branch: main
-      deploy_on_push: false   # manual deploys for staging
-    build_command: pip install .
-    run_command: >-
-      alembic upgrade head &&
-      streamlit run app/streamlit_app.py
-      --server.port=${PORT}
-      --server.address=0.0.0.0
-      --server.headless=true
-      --server.enableCORS=false
-    http_port: 8501
-    instance_count: 1
-    instance_size_slug: basic-s   # 1 vCPU / 1 GB RAM; bump to basic-m if OOM
+alerts:
+- rule: DEPLOYMENT_FAILED
+- rule: DOMAIN_FAILED
 
-    envs:
-      # ── Database ─────────────────────────────────────────────────────────
-      - key: DATABASE_URL
-        scope: RUN_AND_BUILD_TIME
-        type: SECRET
+features:
+- buildpack-stack=ubuntu-22
 
-      # ── Auth ─────────────────────────────────────────────────────────────
-      - key: JWT_SECRET
-        scope: RUN_TIME
-        type: SECRET
-      - key: JWT_ALGORITHM
-        scope: RUN_TIME
-        value: HS256
-      - key: SESSION_TTL_SECONDS
-        scope: RUN_TIME
-        value: "2592000"
+vpc:
+  id: 9bc59245-98de-4dff-805c-cee86a64f1b6
 
-      # ── Paystack ─────────────────────────────────────────────────────────
-      - key: PAYSTACK_SECRET_KEY
-        scope: RUN_TIME
-        type: SECRET
-      - key: PAYSTACK_PUBLIC_KEY
-        scope: RUN_TIME
-        type: SECRET
-      - key: PAYSTACK_BASE_URL
-        scope: RUN_TIME
-        value: https://api.paystack.co
-      - key: PAYSTACK_CALLBACK_URL
-        scope: RUN_TIME
-        value: https://staging.numquants.com/account
+# Staging gets its own DB within the same prod cluster — keeps data isolated
+# while avoiding the cost of a second cluster.
+databases:
+- cluster_name: db-postgresql-financial-models
+  db_name: numquants-staging
+  db_user: numquants-staging-user
+  engine: PG
+  name: db-numquants-staging
+  production: false
 
-      # ── AI commentary ─────────────────────────────────────────────────────
-      - key: LLM_PROVIDER
-        scope: RUN_TIME
-        value: openai
-      - key: OPENAI_API_KEY
-        scope: RUN_TIME
-        type: SECRET
-      - key: OPENAI_MODEL
-        scope: RUN_TIME
-        value: gpt-4o-mini
-      - key: ANTHROPIC_API_KEY
-        scope: RUN_TIME
-        type: SECRET
-      - key: ANTHROPIC_MODEL
-        scope: RUN_TIME
-        value: claude-sonnet-4-6
-
-      # ── Email ─────────────────────────────────────────────────────────────
-      - key: MAILGUN_API_KEY
-        scope: RUN_TIME
-        type: SECRET
-      - key: MAILGUN_DOMAIN
-        scope: RUN_TIME
-        value: mg.numquants.com
-      - key: MAILGUN_API_BASE
-        scope: RUN_TIME
-        value: https://api.mailgun.net
-      - key: MAIL_FROM
-        scope: RUN_TIME
-        value: "Numquants <hello@mg.numquants.com>"
-
-      # ── App ───────────────────────────────────────────────────────────────
-      - key: APP_BASE_URL
-        scope: RUN_TIME
-        value: https://staging.numquants.com
-
-    routes:
-      - path: /
+ingress:
+  rules:
+  - component:
+      name: web
+    match:
+      authority:
+        exact: staging.numquants.com
+      path:
+        prefix: /
 
 domains:
-  - domain: staging.numquants.com
-    type: PRIMARY
-    zone: numquants.com
+- domain: staging.numquants.com
+  type: PRIMARY
+  zone: numquants.com
+
+services:
+- name: web
+  github:
+    repo: fayolt/financial-models-streamlit
+    branch: main
+    deploy_on_push: false   # trigger staging deploys manually
+  build_command: pip install .
+  # Run migrations before starting Streamlit so every deploy is schema-current.
+  # alembic upgrade head is idempotent — safe to run on every restart.
+  run_command: >-
+    alembic upgrade head &&
+    streamlit run app/streamlit_app.py
+    --server.port=${PORT}
+    --server.address=0.0.0.0
+    --server.headless=true
+    --server.enableCORS=false
+  http_port: 8501
+  instance_count: 1
+  instance_size_slug: apps-s-1vcpu-1gb
+
+  envs:
+  # ── Database ───────────────────────────────────────────────────────────────
+  - key: DATABASE_URL
+    scope: RUN_AND_BUILD_TIME
+    value: ${db-numquants-staging.DATABASE_URL}
+
+  # ── Auth ───────────────────────────────────────────────────────────────────
+  - key: JWT_SECRET
+    scope: RUN_TIME
+    type: SECRET
+    # ⚠ Use a DIFFERENT secret from prod to isolate staging sessions.
+  - key: JWT_ALGORITHM
+    scope: RUN_TIME
+    value: HS256
+  - key: SESSION_TTL_SECONDS
+    scope: RUN_TIME
+    value: "2592000"
+
+  # ── Paystack ───────────────────────────────────────────────────────────────
+  - key: PAYSTACK_SECRET_KEY
+    scope: RUN_TIME
+    type: SECRET
+  - key: PAYSTACK_PUBLIC_KEY
+    scope: RUN_TIME
+    type: SECRET
+  - key: PAYSTACK_BASE_URL
+    scope: RUN_TIME
+    value: https://api.paystack.co
+  - key: PAYSTACK_CALLBACK_URL
+    scope: RUN_TIME
+    value: https://staging.numquants.com/account
+
+  # ── AI commentary ──────────────────────────────────────────────────────────
+  - key: LLM_PROVIDER
+    scope: RUN_TIME
+    value: openai
+  - key: OPENAI_API_KEY
+    scope: RUN_TIME
+    type: SECRET
+  - key: OPENAI_MODEL
+    scope: RUN_TIME
+    value: gpt-4o-mini
+  - key: ANTHROPIC_API_KEY
+    scope: RUN_TIME
+    type: SECRET
+  - key: ANTHROPIC_MODEL
+    scope: RUN_TIME
+    value: claude-sonnet-4-6
+
+  # ── Email ──────────────────────────────────────────────────────────────────
+  - key: MAILGUN_API_KEY
+    scope: RUN_TIME
+    type: SECRET
+  - key: MAILGUN_DOMAIN
+    scope: RUN_TIME
+    value: numquants.com
+  - key: MAILGUN_API_BASE
+    scope: RUN_TIME
+    value: https://api.mailgun.net
+  - key: MAIL_FROM
+    scope: RUN_TIME
+    value: "Numquants Staging <no.reply@numquants.com>"
+
+  # ── App ────────────────────────────────────────────────────────────────────
+  - key: APP_BASE_URL
+    scope: RUN_TIME
+    value: https://staging.numquants.com
