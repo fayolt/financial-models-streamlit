@@ -1,0 +1,95 @@
+name: numquants-staging
+region: nyc
+
+services:
+  - name: web
+    github:
+      repo: fayolt/financial-models-streamlit
+      branch: main
+      deploy_on_push: false   # manual deploys for staging
+    build_command: pip install .
+    run_command: >-
+      alembic upgrade head &&
+      streamlit run app/streamlit_app.py
+      --server.port=${PORT}
+      --server.address=0.0.0.0
+      --server.headless=true
+      --server.enableCORS=false
+    http_port: 8501
+    instance_count: 1
+    instance_size_slug: basic-s   # 1 vCPU / 1 GB RAM; bump to basic-m if OOM
+
+    envs:
+      # ── Database ─────────────────────────────────────────────────────────
+      - key: DATABASE_URL
+        scope: RUN_AND_BUILD_TIME
+        type: SECRET
+
+      # ── Auth ─────────────────────────────────────────────────────────────
+      - key: JWT_SECRET
+        scope: RUN_TIME
+        type: SECRET
+      - key: JWT_ALGORITHM
+        scope: RUN_TIME
+        value: HS256
+      - key: SESSION_TTL_SECONDS
+        scope: RUN_TIME
+        value: "2592000"
+
+      # ── Paystack ─────────────────────────────────────────────────────────
+      - key: PAYSTACK_SECRET_KEY
+        scope: RUN_TIME
+        type: SECRET
+      - key: PAYSTACK_PUBLIC_KEY
+        scope: RUN_TIME
+        type: SECRET
+      - key: PAYSTACK_BASE_URL
+        scope: RUN_TIME
+        value: https://api.paystack.co
+      - key: PAYSTACK_CALLBACK_URL
+        scope: RUN_TIME
+        value: https://staging.numquants.com/account
+
+      # ── AI commentary ─────────────────────────────────────────────────────
+      - key: LLM_PROVIDER
+        scope: RUN_TIME
+        value: openai
+      - key: OPENAI_API_KEY
+        scope: RUN_TIME
+        type: SECRET
+      - key: OPENAI_MODEL
+        scope: RUN_TIME
+        value: gpt-4o-mini
+      - key: ANTHROPIC_API_KEY
+        scope: RUN_TIME
+        type: SECRET
+      - key: ANTHROPIC_MODEL
+        scope: RUN_TIME
+        value: claude-sonnet-4-6
+
+      # ── Email ─────────────────────────────────────────────────────────────
+      - key: MAILGUN_API_KEY
+        scope: RUN_TIME
+        type: SECRET
+      - key: MAILGUN_DOMAIN
+        scope: RUN_TIME
+        value: mg.numquants.com
+      - key: MAILGUN_API_BASE
+        scope: RUN_TIME
+        value: https://api.mailgun.net
+      - key: MAIL_FROM
+        scope: RUN_TIME
+        value: "Numquants <hello@mg.numquants.com>"
+
+      # ── App ───────────────────────────────────────────────────────────────
+      - key: APP_BASE_URL
+        scope: RUN_TIME
+        value: https://staging.numquants.com
+
+    routes:
+      - path: /
+
+domains:
+  - domain: staging.numquants.com
+    type: PRIMARY
+    zone: numquants.com
