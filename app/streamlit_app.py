@@ -42,7 +42,15 @@ from app.plugin import SubscriptionTier, User as PluginUser, load_plugins  # noq
 # Listed as "Available models" in the sidebar / dashboard. Plugins not in this
 # set are surfaced under "In coming" — registered as pages (so URLs work) but
 # shown with a Coming-soon placeholder when visited.
-_AVAILABLE_SLUGS: set[str] = {"pharma", "biotech", "cassava-ethanol"}
+_AVAILABLE_SLUGS: set[str] = {
+    "biotech",
+    "cassava-ethanol",
+    "chicken-farming",
+    "goat-farming",
+    "microbrewery",
+    "pharma",
+    "solar-farm",
+}
 
 
 @st.cache_resource
