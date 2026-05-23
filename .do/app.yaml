@@ -38,15 +38,7 @@ services:
     branch: main
     deploy_on_push: false   # trigger staging deploys manually
   dockerfile_path: /Dockerfile
-  # Run migrations before starting Streamlit so every deploy is schema-current.
-  # alembic upgrade head is idempotent — safe to run on every restart.
-  run_command: >-
-    alembic upgrade head &&
-    streamlit run app/streamlit_app.py
-    --server.port=${PORT}
-    --server.address=0.0.0.0
-    --server.headless=true
-    --server.enableCORS=false
+  run_command: /app/start.sh
   http_port: 8501
   instance_count: 1
   instance_size_slug: apps-s-1vcpu-1gb

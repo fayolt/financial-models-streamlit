@@ -19,4 +19,6 @@ RUN pip install --no-cache-dir .
 # Copy the rest of the repo (app code + submodule dirs cloned by DO).
 COPY . .
 
+RUN chmod +x start.sh
+
 EXPOSE 8501
