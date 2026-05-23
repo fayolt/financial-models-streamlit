@@ -37,7 +37,7 @@ services:
     repo: fayolt/financial-models-streamlit
     branch: main
     deploy_on_push: false   # trigger staging deploys manually
-  dockerfile_path: Dockerfile
+  dockerfile_path: /Dockerfile
   # Run migrations before starting Streamlit so every deploy is schema-current.
   # alembic upgrade head is idempotent — safe to run on every restart.
   run_command: >-
