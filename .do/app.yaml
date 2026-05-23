@@ -11,12 +11,10 @@ features:
 vpc:
   id: 9bc59245-98de-4dff-805c-cee86a64f1b6
 
-# Staging gets its own DB within the same prod cluster — keeps data isolated
-# while avoiding the cost of a second cluster.
+# New database within the existing prod cluster — isolated schema, no extra cluster cost.
+# DO auto-assigns db_name and credentials; our app sees it as ${db-numquants-staging.DATABASE_URL}.
 databases:
 - cluster_name: db-postgresql-financial-models
-  db_name: numquants-staging
-  db_user: numquants-staging-user
   engine: PG
   name: db-numquants-staging
   production: false
