@@ -1,123 +1,195 @@
 """Per-model "workspace" renderers — what shows after the user clicks Create.
 
-Two integration patterns are demonstrated here, one per model:
+All 7 submodules use **Option C (inline import)**: we load each submodule's
+`streamlit_app.py` into the same Streamlit process and call (or execute) its
+rendering code directly.
 
-1. **Inline import** (`render_biotech_inline`): we load the submodule's
-   `streamlit_app.py` as a Python module, monkey-patch `st.set_page_config`
-   (already called once by the unified app), and call its `main()`. The
-   submodule renders into the same Streamlit page as the unified app — no
-   extra process, no iframe, full access to our auth + session state. The
-   submodule MUST already expose a `main()` and its top-level code must
-   not have widget side-effects beyond what `main()` handles.
+How it works
+------------
+* **Models that expose `main()`** (biotech, cassava-ethanol, chicken-farming,
+  goat-farming, microbrewery): import the module once (cached in sys.modules)
+  then call `main()` on every rerun. Monkey-patch `st.set_page_config` before
+  each call — whether set_page_config is inside `main()` or at module top-level
+  the monkey-patch suppresses it either way.
 
-2. **Iframe** (`render_pharma_iframe`): we run the submodule as a
-   completely separate Streamlit process on a private port, and embed it
-   in our page via `st.components.v1.iframe`. Total isolation; zero
-   submodule changes; visible chrome seam.
+* **pharma**: its `streamlit_app.py` is a thin launcher; the real entry point
+  is `pharma_financial.app.main()`. We call that directly.
 
-Pick whichever fits the submodule's existing shape. After both are in
-place we can pick a winner per submodule.
+* **solar-farm**: no `main()` — the entire UI is rendered at module level.
+  We re-execute the script on each rerun via `runpy.run_path()` with
+  set_page_config patched out.
+
+No session_state key collisions exist with our auth keys across all 7 models
+(verified by grep — none of the submodules write to `session_state.user` or
+`session_state.session_token`).
 """
 from __future__ import annotations
 
 import importlib.util
-import os
+import runpy
 import sys
 from pathlib import Path
+from typing import Any
 
 import streamlit as st
-
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 # ---------------------------------------------------------------------------
-# Pattern 1 — inline import (used by biotech)
+# Internal helpers
 # ---------------------------------------------------------------------------
 
 
-_BIOTECH_MODULE_NAME = "_inline_biotech_app"
-
-
-def _load_biotech_module():
-    """Import biotech/streamlit_app.py once and cache it in sys.modules.
-
-    Top-level code in that file is just imports + function defs — no widget
-    calls — so loading it does not produce Streamlit output. The actual UI
-    runs only when we call its `main()`.
-    """
-    if _BIOTECH_MODULE_NAME in sys.modules:
-        return sys.modules[_BIOTECH_MODULE_NAME]
-
-    biotech_dir = str(_REPO_ROOT / "biotech")
-    if biotech_dir not in sys.path:
-        sys.path.insert(0, biotech_dir)
-
-    spec = importlib.util.spec_from_file_location(
-        _BIOTECH_MODULE_NAME, _REPO_ROOT / "biotech" / "streamlit_app.py"
-    )
-    if spec is None or spec.loader is None:
-        raise RuntimeError("Could not locate biotech/streamlit_app.py")
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[_BIOTECH_MODULE_NAME] = module
-
-    # biotech's main() calls st.set_page_config; the unified app has already
-    # called it. Patch it out for the duration of the module load + main
-    # invocation. Doing it here protects against any future top-level
-    # set_page_config call too.
-    original = st.set_page_config
+def _patch_spc():
+    """Return (original, patched) – caller must restore."""
+    orig = st.set_page_config
     st.set_page_config = lambda *a, **kw: None
+    return orig
+
+
+def _load_module(module_name: str, app_path: Path, extra_sys_path: str | None = None) -> Any:
+    """Import a submodule script once and cache it in sys.modules.
+
+    Top-level code runs during the first load (function defs, imports, any
+    module-level st.* calls).  set_page_config is suppressed so it doesn't
+    conflict with our app's already-set config.  Subsequent calls return the
+    cached module without re-executing.
+    """
+    if module_name in sys.modules:
+        return sys.modules[module_name]
+
+    submodule_dir = str(app_path.parent)
+    for p in ([extra_sys_path] if extra_sys_path else []) + [submodule_dir]:
+        if p and p not in sys.path:
+            sys.path.insert(0, p)
+
+    spec = importlib.util.spec_from_file_location(module_name, app_path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"Could not locate {app_path}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+
+    orig = _patch_spc()
     try:
         spec.loader.exec_module(module)
     finally:
-        st.set_page_config = original
+        st.set_page_config = orig
 
     return module
 
 
-def render_biotech_inline() -> None:
-    try:
-        module = _load_biotech_module()
-    except Exception as e:
-        st.error(
-            f"Could not load biotech submodule: {e}. "
-            "Check that `biotech/` is initialised "
-            "(`git submodule update --init biotech`)."
-        )
-        return
-
-    original = st.set_page_config
-    st.set_page_config = lambda *a, **kw: None
+def _call_main(module: Any) -> None:
+    """Call module.main() with set_page_config patched out."""
+    orig = _patch_spc()
     try:
         module.main()
     finally:
-        st.set_page_config = original
+        st.set_page_config = orig
+
+
+def _render_error(slug: str, exc: Exception) -> None:
+    st.error(
+        f"Could not load the **{slug}** submodule.  \n"
+        f"`{exc}`  \n\n"
+        "Make sure the submodule is initialised:  \n"
+        f"`git submodule update --init {slug}`",
+    )
 
 
 # ---------------------------------------------------------------------------
-# Pattern 2 — iframe (used by pharma)
+# Individual renderers
 # ---------------------------------------------------------------------------
 
 
-def _pharma_iframe_url() -> str:
-    base = os.environ.get(
-        "PHARMA_APP_URL", "http://localhost:8511"
-    ).rstrip("/")
-    # `?embed=true` strips Streamlit's top toolbar/footer for a cleaner embed.
-    return (
-        f"{base}/?embed=true&embed_options=show_padding"
-    )
+def render_biotech_inline() -> None:
+    try:
+        module = _load_module(
+            "_inline_biotech_app",
+            _REPO_ROOT / "biotech" / "streamlit_app.py",
+        )
+        _call_main(module)
+    except Exception as exc:
+        _render_error("biotech", exc)
 
 
-def render_pharma_iframe() -> None:
-    st.info(
-        "The pharma workspace runs as a **separate Streamlit process** on "
-        "port 8511. Start it in another terminal with `make pharma-app`, then "
-        "this iframe will render its UI below.",
-        icon="ℹ️",
-    )
-    st.components.v1.iframe(
-        _pharma_iframe_url(),
-        height=1400,
-        scrolling=True,
-    )
+def render_cassava_ethanol_inline() -> None:
+    try:
+        module = _load_module(
+            "_inline_cassava_ethanol_app",
+            _REPO_ROOT / "cassava-ethanol" / "streamlit_app.py",
+        )
+        _call_main(module)
+    except Exception as exc:
+        _render_error("cassava-ethanol", exc)
+
+
+def render_chicken_farming_inline() -> None:
+    try:
+        module = _load_module(
+            "_inline_chicken_farming_app",
+            _REPO_ROOT / "chicken-farming" / "streamlit_app.py",
+        )
+        _call_main(module)
+    except Exception as exc:
+        _render_error("chicken-farming", exc)
+
+
+def render_goat_farming_inline() -> None:
+    try:
+        module = _load_module(
+            "_inline_goat_farming_app",
+            _REPO_ROOT / "goat-farming" / "streamlit_app.py",
+        )
+        _call_main(module)
+    except Exception as exc:
+        _render_error("goat-farming", exc)
+
+
+def render_microbrewery_inline() -> None:
+    try:
+        module = _load_module(
+            "_inline_microbrewery_app",
+            _REPO_ROOT / "microbrewery" / "streamlit_app.py",
+        )
+        _call_main(module)
+    except Exception as exc:
+        _render_error("microbrewery", exc)
+
+
+def render_pharma_inline() -> None:
+    """pharma's streamlit_app.py is a thin launcher; call the real entry point."""
+    try:
+        pharma_src = str(_REPO_ROOT / "pharma" / "src")
+        pharma_root = str(_REPO_ROOT / "pharma")
+        for p in (pharma_src, pharma_root):
+            if p not in sys.path:
+                sys.path.insert(0, p)
+        from pharma_financial.app import main as pharma_main  # noqa: PLC0415
+
+        orig = _patch_spc()
+        try:
+            pharma_main()
+        finally:
+            st.set_page_config = orig
+    except Exception as exc:
+        _render_error("pharma", exc)
+
+
+def render_solar_farm_inline() -> None:
+    """solar-farm has no main() — re-execute the script on each rerun."""
+    try:
+        solar_dir = str(_REPO_ROOT / "solar-farm")
+        if solar_dir not in sys.path:
+            sys.path.insert(0, solar_dir)
+
+        orig = _patch_spc()
+        try:
+            runpy.run_path(
+                str(_REPO_ROOT / "solar-farm" / "streamlit_app.py"),
+                run_name="__main__",
+            )
+        finally:
+            st.set_page_config = orig
+    except Exception as exc:
+        _render_error("solar-farm", exc)

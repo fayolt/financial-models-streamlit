@@ -129,13 +129,15 @@ else:
     #     compute + download view from the contract).
 
     # Workspace renderers — what shows after the user clicks Create model.
-    # Two integration patterns are live so we can compare side by side:
-    #   * biotech → inline import of biotech/streamlit_app.py main()
-    #   * pharma  → iframe to the pharma submodule running on its own port
-    #   * everything else → the existing minimal plugin.render() from the contract
+    # All 7 models now use Option C (inline import).
     _WORKSPACE_RENDERERS = {
-        "biotech": model_workspace.render_biotech_inline,
-        "pharma": model_workspace.render_pharma_iframe,
+        "biotech":          model_workspace.render_biotech_inline,
+        "cassava-ethanol":  model_workspace.render_cassava_ethanol_inline,
+        "chicken-farming":  model_workspace.render_chicken_farming_inline,
+        "goat-farming":     model_workspace.render_goat_farming_inline,
+        "microbrewery":     model_workspace.render_microbrewery_inline,
+        "pharma":           model_workspace.render_pharma_inline,
+        "solar-farm":       model_workspace.render_solar_farm_inline,
     }
 
     def _make_plugin_page(plugin):
