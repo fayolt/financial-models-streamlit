@@ -32,29 +32,54 @@ def render(
         for col, item in zip(cols, items[row_start : row_start + cards_per_row]):
             with col:
                 if item is None:
-                    _render_create_new_card()
+                    _render_create_new_card(available_plugins, on_select)
                 else:
                     _render_plugin_card(item, on_select)
 
 
-def _render_create_new_card() -> None:
+def _render_create_new_card(
+    available_plugins: list[ModelPlugin],
+    on_select: Callable[[str], None],
+) -> None:
+    _PICKER_KEY = "dashboard_create_new_open"
     with st.container(border=True):
         st.subheader("Create New Model")
         st.caption("Choose a model to start a new customer form.")
         st.write("")
-        st.caption(
-            "Select a model and complete the input form before other "
-            "dashboards unlock."
-        )
-        st.write("")
-        st.button(
-            "➕ Choose Model",
-            type="primary",
-            use_container_width=True,
-            disabled=True,
-            key="dashboard-create-new-cta",
-            help="Pick a model card on the right to start.",
-        )
+
+        if not st.session_state.get(_PICKER_KEY):
+            st.caption(
+                "Select a model and complete the input form before other "
+                "dashboards unlock."
+            )
+            st.write("")
+            if st.button(
+                "➕ Choose Model",
+                type="primary",
+                use_container_width=True,
+                key="dashboard-create-new-cta",
+            ):
+                st.session_state[_PICKER_KEY] = True
+                st.rerun()
+        else:
+            st.caption("Select a model to get started:")
+            for plugin in available_plugins:
+                label = f"{plugin.icon}  {plugin.name}" if plugin.icon else plugin.name
+                if st.button(
+                    label,
+                    key=f"create-new-pick-{plugin.slug}",
+                    use_container_width=True,
+                ):
+                    st.session_state[_PICKER_KEY] = False
+                    on_select(plugin.slug)
+            st.write("")
+            if st.button(
+                "✕ Cancel",
+                key="dashboard-create-new-cancel",
+                use_container_width=True,
+            ):
+                st.session_state[_PICKER_KEY] = False
+                st.rerun()
 
 
 def _render_plugin_card(plugin: ModelPlugin, on_select: Callable[[str], None]) -> None:

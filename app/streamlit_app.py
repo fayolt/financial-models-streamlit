@@ -53,6 +53,94 @@ _AVAILABLE_SLUGS: set[str] = {
 }
 
 
+def _gated_renderer(renderer, plugin, plugin_user) -> None:
+    """Run renderer() with every st.download_button call tier-gated.
+
+    Patches st.download_button before the native workspace renders and
+    restores it afterward (same pattern as the set_page_config patch).
+
+    Tier rules: Free → no downloads; Pro → XLSX/CSV; Enterprise → all formats.
+    Each successful download is audited in report_runs for quota tracking.
+    """
+    from app.db.models import ReportRun  # local to avoid circular import at load time
+    from app.plugin.contract import Format
+    from app.reports.service import FORMAT_TIER_REQUIRED, can_generate, quota_remaining
+
+    user_tier = plugin_user.tier.value
+    user_id = plugin_user.id
+
+    with SessionLocal() as db:
+        remaining = quota_remaining(db, user_id)
+
+    _EXT_TO_FMT: dict[str, Format] = {
+        "xlsx": Format.XLSX,
+        "xls": Format.XLSX,
+        "pdf": Format.PDF,
+        "docx": Format.DOCX,
+        "csv": Format.CSV,
+    }
+    orig_dl = st.download_button
+
+    def _gated(*args, **kwargs):
+        label = (args[0] if args else None) or kwargs.get("label", "Download")
+        data = args[1] if len(args) > 1 else kwargs.get("data", b"")
+        file_name = (args[2] if len(args) > 2 else None) or kwargs.get("file_name") or ""
+        key = kwargs.get("key")
+        use_cw = kwargs.get("use_container_width", False)
+
+        ext = file_name.rsplit(".", 1)[-1].lower() if "." in file_name else ""
+        fmt = _EXT_TO_FMT.get(ext)
+        # Derive a stable key for the replacement button so Streamlit doesn't
+        # complain about duplicate widget IDs across reruns.
+        gated_key = f"_locked_{key}" if key else f"_locked_{abs(hash(label + file_name))}"
+
+        if fmt and not can_generate(user_tier=user_tier, fmt=fmt):
+            required = FORMAT_TIER_REQUIRED.get(fmt, SubscriptionTier.ENTERPRISE)
+            st.button(
+                f"🔒 {label}",
+                disabled=True,
+                help=f"Upgrade to {required.value.title()} to enable {ext.upper()} downloads.",
+                key=gated_key,
+                use_container_width=use_cw,
+            )
+            return False
+
+        if remaining is not None and remaining <= 0:
+            st.button(
+                f"📊 {label} (quota exceeded)",
+                disabled=True,
+                help="Monthly report quota exhausted. Upgrade to Enterprise for unlimited exports.",
+                key=gated_key,
+                use_container_width=use_cw,
+            )
+            return False
+
+        clicked = orig_dl(*args, **kwargs)
+        if clicked and fmt:
+            # Audit the download so quota_remaining() counts it next render.
+            try:
+                raw = data() if callable(data) else data
+                size = len(raw) if isinstance(raw, (bytes, bytearray)) else None
+                with SessionLocal() as db:
+                    db.add(ReportRun(
+                        user_id=user_id,
+                        model_slug=plugin.slug,
+                        format=ext,
+                        status="success",
+                        bytes_size=size,
+                    ))
+                    db.commit()
+            except Exception:
+                pass  # never block a download over an audit failure
+        return clicked
+
+    st.download_button = _gated
+    try:
+        renderer()
+    finally:
+        st.download_button = orig_dl
+
+
 @st.cache_resource
 def _registry():
     return load_plugins(_REPO_ROOT / "models")
@@ -164,7 +252,7 @@ else:
                         st.rerun()
                 renderer = _WORKSPACE_RENDERERS.get(plugin.slug)
                 if renderer is not None:
-                    renderer()
+                    _gated_renderer(renderer, plugin, plugin_user)
                 else:
                     plugin.render(user=plugin_user)
             else:
