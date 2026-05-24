@@ -19,6 +19,12 @@ def render() -> None:
         submitted = st.form_submit_button("Log in", type="primary")
 
     _render_forgot_link()
+    st.markdown(
+        '<p style="margin-top:4px;font-size:13px;">'
+        'No account? <a href="/signup" target="_self">Sign up</a>'
+        '</p>',
+        unsafe_allow_html=True,
+    )
 
     if not submitted:
         return

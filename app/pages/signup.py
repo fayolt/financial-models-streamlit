@@ -4,7 +4,7 @@ from __future__ import annotations
 import streamlit as st
 
 from app.auth.cookie import set_session_token
-from app.auth.service import AuthError, login, signup
+from app.auth.service import AuthError, login, signup_silent
 from app.auth.tokens import SESSION_TTL_SECONDS
 from app.db import SessionLocal
 
@@ -20,6 +20,13 @@ def render() -> None:
         confirm = st.text_input("Confirm password", type="password")
         submitted = st.form_submit_button("Create account", type="primary")
 
+    st.markdown(
+        '<p style="margin-top:4px;font-size:13px;">'
+        'Already have an account? <a href="/login" target="_self">Log in</a>'
+        '</p>',
+        unsafe_allow_html=True,
+    )
+
     if not submitted:
         return
     if not email or not password:
@@ -31,11 +38,24 @@ def render() -> None:
 
     with SessionLocal() as db:
         try:
-            signup(db, email=email, password=password, full_name=full_name or None)
-            user, token = login(db, email=email, password=password)
+            user = signup_silent(
+                db, email=email, password=password, full_name=full_name or None
+            )
         except AuthError as e:
             st.error(str(e))
             return
+
+        if user is None:
+            # Email already on file. Don't disclose that — show the same
+            # response a brand-new signup would see, and email the address
+            # owner via signup_silent so they can recover the account.
+            st.success(
+                "Check your inbox — we sent a message to that address with "
+                "next steps. If you don't see it within a minute, check spam."
+            )
+            return
+
+        _, token = login(db, email=email, password=password)
 
     set_session_token(token, max_age_seconds=SESSION_TTL_SECONDS)
     st.session_state.user = {

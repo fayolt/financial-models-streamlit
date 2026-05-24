@@ -137,6 +137,7 @@ def _render_security_section(user_id: UUID) -> None:
 
 
 def _render_subscription_block(user_id: UUID) -> None:
+    st.subheader("Subscription")
     with SessionLocal() as db:
         sub = (
             db.query(Subscription)
@@ -146,11 +147,10 @@ def _render_subscription_block(user_id: UUID) -> None:
             .first()
         )
         if sub is None:
-            st.info("No active subscription. Visit the Pricing page to upgrade.")
+            st.info("No active subscription.")
+            st.link_button("View pricing plans →", url="/pricing")
             return
         plan = db.get(Plan, sub.plan_id)
-
-    st.subheader("Active subscription")
     st.markdown(
         f"**Plan:** {plan.name}  ·  {plan.currency} {plan.monthly_price_minor_units / 100:,.0f}/mo"
     )
@@ -171,19 +171,27 @@ def _render_subscription_block(user_id: UUID) -> None:
                 use_container_width=True,
                 key=f"confirm-cancel-{sub.id}",
             ):
-                # Try to tell Paystack to stop billing, but never let a
-                # network/Paystack failure block the local cancellation —
-                # the user explicitly asked to cancel.
-                if sub.paystack_subscription_code:
-                    try:
-                        disable_subscription(sub.paystack_subscription_code)
-                    except Exception as e:
-                        st.warning(
-                            f"Paystack call failed (`{e}`). Cancelling locally "
-                            "anyway — you may also need to cancel on the "
-                            "Paystack side to fully stop billing."
-                        )
-                # Cancel locally regardless of paystack code presence.
+                # If we never received a paystack_subscription_code (webhook
+                # missed or delayed), refuse to cancel locally — otherwise the
+                # user sees "cancelled" in our UI but Paystack keeps charging.
+                if not sub.paystack_subscription_code:
+                    st.error(
+                        "We couldn't sync this subscription with Paystack yet, "
+                        "so cancelling here would not stop billing. Please "
+                        "contact support@numquants.com — we'll cancel it on "
+                        "the Paystack side and refund any charges since you "
+                        "requested cancellation."
+                    )
+                    st.session_state.pop(cancel_key, None)
+                    return
+                try:
+                    disable_subscription(sub.paystack_subscription_code)
+                except Exception as e:
+                    st.warning(
+                        f"Paystack call failed (`{e}`). Cancelling locally "
+                        "anyway — you may also need to cancel on the "
+                        "Paystack side to fully stop billing."
+                    )
                 # Cancel ALL active/past_due subs for this user — they may have
                 # accumulated duplicates from re-delivered webhooks or repeated
                 # verify-transaction callbacks.
@@ -272,9 +280,10 @@ def render() -> None:
 
     _handle_paystack_callback()
 
-    st.title("Account")
+    name = user.get("full_name") or ""
+    st.title(f"Account — {name}" if name else "Account")
     st.markdown(f"**Email:** {user['email']}")
-    st.markdown(f"**Subscription tier:** {user['tier'].title()}")
+    st.markdown(f"**Plan:** {user['tier'].title()}")
 
     st.divider()
     _render_profile_section(UUID(user["id"]))
@@ -286,7 +295,7 @@ def render() -> None:
     _render_subscription_block(UUID(user["id"]))
 
     st.divider()
-    if st.button("Log out", type="primary"):
+    if st.button("Log out"):
         token = st.session_state.get("session_token")
         if token:
             with SessionLocal() as db:

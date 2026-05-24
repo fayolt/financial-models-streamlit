@@ -16,6 +16,22 @@ if str(_REPO_ROOT) not in sys.path:
 
 import streamlit as st  # noqa: E402
 
+import logging  # noqa: E402
+import uuid as _uuid_mod  # noqa: E402
+
+from app.config import (  # noqa: E402
+    log_startup_summary,
+    validate_for_web,
+)
+from app.logging_setup import configure_logging  # noqa: E402
+
+# JSON logs to stdout for DO/Datadog ingestion. Must run before anything
+# else logs so the format is consistent.
+configure_logging("web")
+
+# Fail loud on missing/placeholder secrets in production.
+validate_for_web()
+
 from app.auth.cookie import get_session_token  # noqa: E402
 from app.auth.service import get_current_user  # noqa: E402
 from app.db import SessionLocal  # noqa: E402
@@ -31,11 +47,39 @@ from app.pages import (  # noqa: E402
     pricing,
     reset_password,
     signup,
+    verify_email,
 )
 from app.pages.account import (  # noqa: E402
     _handle_paystack_callback as _process_paystack_callback,
 )
 from app.plugin import SubscriptionTier, User as PluginUser, load_plugins  # noqa: E402
+
+log_startup_summary("web")
+
+_log = logging.getLogger("app.streamlit")
+
+
+def _is_streamlit_control_flow(exc: BaseException) -> bool:
+    """Recognise Streamlit's RerunException/StopException across versions
+    without coupling to its internal import paths."""
+    return type(exc).__name__ in {"RerunException", "StopException"}
+
+
+def _run_with_error_boundary(fn, *args, **kwargs):
+    """Run `fn` and surface a friendly error if it raises, logging the full
+    traceback with a correlation UUID so we can grep the JSON logs."""
+    try:
+        return fn(*args, **kwargs)
+    except BaseException as exc:
+        if _is_streamlit_control_flow(exc):
+            raise
+        error_id = _uuid_mod.uuid4().hex[:12]
+        _log.exception("page rendering failed", extra={"error_id": error_id})
+        st.error(
+            "Something went wrong while loading this page. Our team has been "
+            f"notified.\n\nReference: `{error_id}`"
+        )
+        st.stop()
 
 
 # --- Config: which model slugs are "ready" today vs. "in coming" -------------
@@ -181,8 +225,18 @@ _hydrate_user_from_cookie()
 # Reset-password flow uses a special URL routed by ?reset_token=… in the
 # query string. It bypasses normal navigation so an unauthenticated visitor
 # arriving from an emailed link lands directly on the form.
-if "reset_token" in st.query_params and "user" not in st.session_state:
-    reset_password.render()
+if (
+    ("reset_token" in st.query_params or "_reset_token" in st.session_state)
+    and "user" not in st.session_state
+):
+    _run_with_error_boundary(reset_password.render)
+    st.stop()
+
+
+# Email-verification flow uses ?verify_email_token=… in the query string.
+# Run before navigation so the link lands directly on the verification page.
+if "verify_email_token" in st.query_params:
+    _run_with_error_boundary(verify_email.render)
     st.stop()
 
 
@@ -194,7 +248,7 @@ if (
     "user" in st.session_state
     and ("reference" in st.query_params or "trxref" in st.query_params)
 ):
-    _process_paystack_callback()
+    _run_with_error_boundary(_process_paystack_callback)
 
 
 if "user" not in st.session_state:
@@ -203,9 +257,28 @@ if "user" not in st.session_state:
         st.Page(signup.render, title="Sign up", url_path="signup", icon=":material/person_add:"),
         st.Page(forgot_password.render, title="Forgot password", url_path="forgot-password", icon=":material/lock_reset:"),
     ])
-    pg.run()
+    _run_with_error_boundary(pg.run)
 else:
     user_dict = st.session_state.user
+
+    # Refresh tier from DB on every page load so a webhook-driven demotion
+    # (cancellation, payment failure) takes effect immediately instead of
+    # waiting up to SESSION_TTL_SECONDS (30 days) for the user to log in
+    # again. One indexed PK lookup per script run — negligible.
+    from app.db.models import User as _DbUser  # noqa: E402
+
+    with SessionLocal() as _db:
+        _fresh = _db.get(_DbUser, UUID(user_dict["id"]))
+        if _fresh is not None and _fresh.is_active:
+            if user_dict.get("tier") != _fresh.tier:
+                user_dict["tier"] = _fresh.tier
+                st.session_state.user = user_dict
+        else:
+            # User was deleted/deactivated; force re-login.
+            st.session_state.pop("user", None)
+            st.session_state.pop("session_token", None)
+            st.rerun()
+
     plugin_user = PluginUser(
         id=UUID(user_dict["id"]),
         email=user_dict["email"],
@@ -339,7 +412,7 @@ else:
                 st.switch_page(plugin_page_objs[plugin.slug])
 
         if coming_plugins:
-            st.markdown(f"**IN COMING ({len(coming_plugins)})**")
+            st.markdown(f"**COMING SOON ({len(coming_plugins)})**")
             for plugin in coming_plugins:
                 label = (
                     f"{plugin.icon}  {plugin.name}" if plugin.icon else plugin.name
@@ -381,4 +454,4 @@ else:
         [dashboard_page, *plugin_page_objs.values(), pricing_page, account_page, *admin_pages],
         position="hidden",
     )
-    pg.run()
+    _run_with_error_boundary(pg.run)

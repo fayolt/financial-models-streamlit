@@ -53,7 +53,7 @@ def _start_checkout(plan: Plan, user_email: str) -> str:
     return result["authorization_url"]
 
 
-def _render_plan_card(plan: Plan, user: dict) -> None:
+def _render_plan_card(plan: Plan, user: dict, *, email_verified: bool = True) -> None:
     is_current = user["tier"] == plan.tier
 
     st.subheader(plan.name)
@@ -108,6 +108,8 @@ def _render_plan_card(plan: Plan, user: dict) -> None:
         type="primary",
         key=f"sub-{plan.slug}",
         use_container_width=True,
+        disabled=not email_verified,
+        help=None if email_verified else "Verify your email before subscribing.",
     ):
         try:
             url = _start_checkout(plan, user["email"])
@@ -130,11 +132,15 @@ def render() -> None:
     st.title("Pricing")
     st.write(
         "Pick the plan that fits how you use the financial models. "
-        "Billing is monthly in NGN; cancel anytime from your Account."
+        "Billing is monthly in ZAR; cancel anytime from your Account."
     )
     st.divider()
 
     with SessionLocal() as db:
+        from app.db.models import User
+        db_user = db.get(User, user["id"])
+        email_verified = bool(db_user and db_user.email_verified_at)
+
         plans = (
             db.query(Plan)
             .filter_by(is_active=True)
@@ -146,7 +152,24 @@ def render() -> None:
         st.warning("No plans configured. Run `make seed`.")
         return
 
+    if not email_verified:
+        st.warning(
+            "Please verify your email before subscribing to a paid plan. "
+            "Check the inbox for **{email}** — we sent a confirmation link "
+            "when you signed up.".format(email=user["email"])
+        )
+        if st.button("Resend verification email", key="resend-verify"):
+            from app.auth.service import request_email_verification
+            from uuid import UUID
+            with SessionLocal() as db:
+                sent = request_email_verification(db, user_id=UUID(user["id"]))
+            if sent:
+                st.success("Verification email re-sent.")
+            else:
+                st.info("Your email is already verified — refresh the page.")
+        st.divider()
+
     cols = st.columns(len(plans))
     for col, plan in zip(cols, plans):
         with col:
-            _render_plan_card(plan, user)
+            _render_plan_card(plan, user, email_verified=email_verified)

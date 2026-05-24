@@ -15,6 +15,13 @@ def render() -> None:
         email = st.text_input("Email", placeholder="you@example.com")
         submitted = st.form_submit_button("Send reset link", type="primary")
 
+    st.markdown(
+        '<p style="margin-top:4px;font-size:13px;">'
+        '<a href="/login" target="_self">Back to log in</a>'
+        '</p>',
+        unsafe_allow_html=True,
+    )
+
     if not submitted:
         return
     if not email:
