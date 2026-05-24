@@ -9,17 +9,43 @@ from app.auth.service import AuthError, login, signup_silent
 from app.auth.tokens import SESSION_TTL_SECONDS
 from app.db import SessionLocal
 
+_BRAND_HEADER = """
+<div style="text-align:center;padding:2rem 0 1.5rem;">
+  <div style="font-size:2.5rem;line-height:1;">📊</div>
+  <h1 style="color:#16a34a;margin:0.25rem 0 0;font-size:1.6rem;font-weight:700;">NumQuants</h1>
+  <p style="color:#64748b;margin:0.25rem 0 0;font-size:0.875rem;">
+    Financial modelling for the African market
+  </p>
+</div>
+"""
+
+_FOOTER = """
+<p style="text-align:center;font-size:11px;color:#94a3b8;margin-top:2rem;">
+  © 2026 NumQuants &nbsp;·&nbsp;
+  <a href="/terms" target="_self" style="color:#94a3b8;">Terms</a> &nbsp;·&nbsp;
+  <a href="/privacy" target="_self" style="color:#94a3b8;">Privacy</a> &nbsp;·&nbsp;
+  <a href="mailto:support@numquants.com" style="color:#94a3b8;">Support</a>
+</p>
+"""
+
 
 def render() -> None:
-    st.title("Sign up")
-    st.write("Create an account to run financial models and download reports.")
+    if "user" in st.session_state:
+        st.markdown(_BRAND_HEADER, unsafe_allow_html=True)
+        st.markdown(
+            "<p style='text-align:center;color:#64748b;'>Loading your dashboard…</p>",
+            unsafe_allow_html=True,
+        )
+        return
+
+    st.markdown(_BRAND_HEADER, unsafe_allow_html=True)
 
     with st.form("signup_form", clear_on_submit=False):
         full_name = st.text_input("Full name (optional)")
         email = st.text_input("Email", placeholder="you@example.com")
         password = st.text_input("Password", type="password", help="At least 8 characters.")
         confirm = st.text_input("Confirm password", type="password")
-        submitted = st.form_submit_button("Create account", type="primary")
+        submitted = st.form_submit_button("Create account", type="primary", use_container_width=True)
 
     st.markdown(
         '<p style="margin-top:4px;font-size:13px;">'
@@ -35,6 +61,7 @@ def render() -> None:
         '</p>',
         unsafe_allow_html=True,
     )
+    st.markdown(_FOOTER, unsafe_allow_html=True)
 
     if not submitted:
         return
@@ -47,7 +74,7 @@ def render() -> None:
 
     with SessionLocal() as db:
         if is_rate_limited(db, "signup"):
-            st.error("Too many signup attempts from your location. Please wait a few minutes.")
+            st.error("Too many signup attempts. Please wait a few minutes.")
             return
         try:
             user = signup_silent(
@@ -59,9 +86,6 @@ def render() -> None:
             return
 
         if user is None:
-            # Email already on file. Don't disclose that — show the same
-            # response a brand-new signup would see, and email the address
-            # owner via signup_silent so they can recover the account.
             st.success(
                 "Check your inbox — we sent a message to that address with "
                 "next steps. If you don't see it within a minute, check spam."
@@ -70,10 +94,7 @@ def render() -> None:
 
         _, token = login(db, email=email, password=password)
 
-    # Populate session_state first, then let the cookie controller persist
-    # the token asynchronously. See login.py for the rationale on omitting
-    # st.rerun() — the controller triggers its own rerun once the JS cookie
-    # write completes; calling st.rerun() here would abort that.
+    # Same pattern as login.py — no explicit st.rerun().
     st.session_state.user = {
         "id": str(user.id),
         "email": user.email,
@@ -83,4 +104,3 @@ def render() -> None:
     }
     st.session_state.session_token = token
     set_session_token(token, max_age_seconds=SESSION_TTL_SECONDS)
-    st.success("Account created — welcome!")

@@ -8,6 +8,15 @@ from app.auth.service import request_password_reset
 from app.db import SessionLocal
 
 
+_FOOTER = """
+<p style="text-align:center;font-size:11px;color:#94a3b8;margin-top:2rem;">
+  © 2026 NumQuants &nbsp;·&nbsp;
+  <a href="/terms" target="_self" style="color:#94a3b8;">Terms</a> &nbsp;·&nbsp;
+  <a href="/privacy" target="_self" style="color:#94a3b8;">Privacy</a>
+</p>
+"""
+
+
 def render() -> None:
     st.title("Forgot password")
     st.write("Enter your account email and we'll send you a reset link.")
@@ -22,6 +31,7 @@ def render() -> None:
         '</p>',
         unsafe_allow_html=True,
     )
+    st.markdown(_FOOTER, unsafe_allow_html=True)
 
     if not submitted:
         return

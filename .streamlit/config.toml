@@ -7,3 +7,13 @@ gatherUsageStats = false
 
 [theme]
 base = "light"
+primaryColor = "#16a34a"
+textColor = "#0f172a"
+
+# Explicit sidebar overrides silence the streamlit-cookies-controller
+# component's "Invalid color … in theme.sidebar" console warnings, which
+# fire once per component render because Streamlit 1.46+ passes a separate
+# theme.sidebar namespace to child iframes and empty strings fail validation.
+[theme.sidebar]
+primaryColor = "#16a34a"
+textColor = "#0f172a"

@@ -481,6 +481,15 @@ else:
             ):
                 st.switch_page(admin_pages[1])
 
+        st.markdown(
+            "<hr style='margin:1.5rem 0 0.75rem;border:none;border-top:1px solid #e2e8f0;'/>"
+            "<p style='font-size:11px;color:#94a3b8;text-align:center;margin:0;'>"
+            "© 2026 NumQuants &nbsp;·&nbsp; "
+            "<a href='mailto:support@numquants.com' style='color:#94a3b8;'>Support</a>"
+            "</p>",
+            unsafe_allow_html=True,
+        )
+
     # --- Hidden nav: still gives us URL routing without showing the default
     # sidebar list (we render our own above). ---
     pg = st.navigation(
