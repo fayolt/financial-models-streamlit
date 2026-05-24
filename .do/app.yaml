@@ -8,6 +8,14 @@ alerts:
 vpc:
   id: 9bc59245-98de-4dff-805c-cee86a64f1b6
 
+databases:
+- cluster_name: db-postgresql-financial-models
+  db_name: db-numquants-staging
+  db_user: staging
+  engine: PG
+  name: db-postgresql-financial-models
+  production: true
+
 ingress:
   rules:
   - component:
@@ -34,10 +42,9 @@ services:
 
   envs:
   # ── Database ───────────────────────────────────────────────────────────────
-  # Value: postgresql://doadmin:<pass>@db-postgresql-financial-models-do-user-31854730-0.k.db.ondigitalocean.com:25060/db-numquants-staging?sslmode=require
   - key: DATABASE_URL
     scope: RUN_AND_BUILD_TIME
-    type: SECRET
+    value: ${db-postgresql-financial-models.DATABASE_URL}
 
   # ── Auth ───────────────────────────────────────────────────────────────────
   - key: JWT_SECRET
