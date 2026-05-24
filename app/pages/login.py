@@ -10,12 +10,18 @@ from app.auth.tokens import SESSION_TTL_SECONDS
 from app.db import SessionLocal
 
 _BRAND_HEADER = """
-<div style="text-align:center;padding:2rem 0 1.5rem;">
+<div style="text-align:center;padding:2rem 0 1rem;">
   <div style="font-size:2.5rem;line-height:1;">📊</div>
   <h1 style="color:#16a34a;margin:0.25rem 0 0;font-size:1.6rem;font-weight:700;">NumQuants</h1>
-  <p style="color:#64748b;margin:0.25rem 0 0;font-size:0.875rem;">
+  <p style="color:#64748b;margin:0.25rem 0 0.75rem;font-size:0.875rem;">
     Financial modelling for the African market
   </p>
+  <div style="display:flex;flex-wrap:wrap;gap:0.4rem;justify-content:center;margin-bottom:0.5rem;">
+    <span style="font-size:0.75rem;color:#475569;background:#f1f5f9;padding:0.2rem 0.65rem;border-radius:1rem;">📊 7 financial models</span>
+    <span style="font-size:0.75rem;color:#475569;background:#f1f5f9;padding:0.2rem 0.65rem;border-radius:1rem;">📄 XLSX · PDF · DOCX exports</span>
+    <span style="font-size:0.75rem;color:#475569;background:#f1f5f9;padding:0.2rem 0.65rem;border-radius:1rem;">🤖 AI commentary</span>
+    <span style="font-size:0.75rem;color:#475569;background:#f1f5f9;padding:0.2rem 0.65rem;border-radius:1rem;">💳 ZAR billing · cancel anytime</span>
+  </div>
 </div>
 """
 

@@ -136,6 +136,57 @@ def _render_security_section(user_id: UUID) -> None:
 # --- Section: subscription (unchanged) --------------------------------------
 
 
+def _render_no_subscription_cta() -> None:
+    """Inline pricing preview shown when the user has no active subscription."""
+    st.info("You are on the **Free** plan — upgrade to unlock exports and AI commentary.")
+    st.write("")
+
+    cols = st.columns(3)
+    _PLANS = [
+        {
+            "name": "Free",
+            "price": "ZAR 0/mo",
+            "features": ["View all 7 models", "On-screen only", "No exports"],
+            "highlight": False,
+        },
+        {
+            "name": "Pro",
+            "price": "ZAR 250/mo",
+            "features": ["Everything in Free", "XLSX exports", "50 reports/mo"],
+            "highlight": True,
+        },
+        {
+            "name": "Enterprise",
+            "price": "ZAR 300/mo",
+            "features": ["Everything in Pro", "PDF + DOCX exports", "AI commentary · Unlimited"],
+            "highlight": False,
+        },
+    ]
+
+    for col, plan in zip(cols, _PLANS):
+        with col:
+            border_style = (
+                "border:2px solid #16a34a;border-radius:0.5rem;padding:0.75rem;"
+                if plan["highlight"]
+                else "border:1px solid #e2e8f0;border-radius:0.5rem;padding:0.75rem;"
+            )
+            features_html = "".join(
+                f"<li style='font-size:0.8rem;color:#475569;'>{f}</li>"
+                for f in plan["features"]
+            )
+            st.markdown(
+                f"<div style='{border_style}'>"
+                f"<div style='font-weight:700;font-size:0.95rem;'>{plan['name']}</div>"
+                f"<div style='color:#16a34a;font-size:0.85rem;margin:0.2rem 0 0.5rem;'>{plan['price']}</div>"
+                f"<ul style='margin:0;padding-left:1rem;'>{features_html}</ul>"
+                f"</div>",
+                unsafe_allow_html=True,
+            )
+
+    st.write("")
+    st.link_button("See full pricing & subscribe →", url="/pricing", type="primary")
+
+
 def _render_subscription_block(user_id: UUID) -> None:
     st.subheader("Subscription")
     with SessionLocal() as db:
@@ -147,8 +198,7 @@ def _render_subscription_block(user_id: UUID) -> None:
             .first()
         )
         if sub is None:
-            st.info("No active subscription.")
-            st.link_button("View pricing plans →", url="/pricing")
+            _render_no_subscription_cta()
             return
         plan = db.get(Plan, sub.plan_id)
     st.markdown(
