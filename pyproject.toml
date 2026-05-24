@@ -34,6 +34,7 @@ dependencies = [
     "python-json-logger>=2.0",
     # Submodule deps (kept here so the unified image installs everything).
     "networkx>=3.0",          # cassava-ethanol/bioethanol_model/advanced_tools.py
+    "numpy-financial>=1.0",   # cassava-ethanol (npf.irr, npf.npv etc.)
 ]
 
 [project.optional-dependencies]
