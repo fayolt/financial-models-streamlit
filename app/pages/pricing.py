@@ -112,11 +112,16 @@ def _render_plan_card(plan: Plan, user: dict, *, email_verified: bool = True) ->
     checkout_key = f"checkout_url_{plan.slug}"
     if checkout_key in st.session_state:
         url = st.session_state[checkout_key]
-        st.link_button(
-            "Continue to Paystack →",
-            url,
-            type="primary",
-            use_container_width=True,
+        # Same-tab navigation — st.link_button opens a new tab which spawns
+        # a fresh Streamlit session, so the post-payment callback lands on a
+        # page that hasn't yet hydrated session_state.user → "Page not found".
+        st.markdown(
+            f'<a href="{url}" target="_self" '
+            'style="display:inline-block;width:100%;text-align:center;'
+            'background:#16a34a;color:white;padding:0.5rem 1rem;'
+            'border-radius:0.5rem;text-decoration:none;font-weight:600;">'
+            'Continue to Paystack →</a>',
+            unsafe_allow_html=True,
         )
         if st.button(
             "Cancel",

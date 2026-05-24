@@ -254,6 +254,21 @@ if (
 
 
 if "user" not in st.session_state:
+    # If the user landed here unauthenticated with a Paystack reference,
+    # they may have just paid in a fresh-session new tab. Surface a clear
+    # message and a login link instead of falling through to "Page not found"
+    # when the URL is e.g. /account?reference=… and /account isn't in the
+    # unauthenticated nav.
+    if "reference" in st.query_params or "trxref" in st.query_params:
+        ref = st.query_params.get("reference") or st.query_params.get("trxref")
+        st.info(
+            "Your payment was received. Please log in to confirm and "
+            "activate your subscription.\n\n"
+            f"Reference: `{ref}`"
+        )
+        st.link_button("Log in", url="/login", type="primary")
+        st.stop()
+
     pg = st.navigation([
         st.Page(login.render, title="Log in", url_path="login", icon=":material/login:"),
         st.Page(signup.render, title="Sign up", url_path="signup", icon=":material/person_add:"),
