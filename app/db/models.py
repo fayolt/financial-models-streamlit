@@ -217,6 +217,59 @@ class CommentaryRun(Base):
     completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
 
 
+class Refund(Base):
+    """Admin-issued refund against a Paystack transaction reference."""
+
+    __tablename__ = "refunds"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    user_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
+    )
+    created_by_admin_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
+    )
+    paystack_transaction_reference: Mapped[str] = mapped_column(
+        String(120), nullable=False, index=True
+    )
+    paystack_refund_id: Mapped[Optional[str]] = mapped_column(String(120), unique=True)
+    # None = full refund; otherwise minor units (cents/kobo).
+    amount_minor_units: Mapped[Optional[int]] = mapped_column(Integer)
+    currency: Mapped[str] = mapped_column(String(3), default="ZAR", nullable=False)
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    # 'pending' | 'processed' | 'failed'
+    status: Mapped[str] = mapped_column(String(20), default="pending", nullable=False)
+    error_message: Mapped[Optional[str]] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, nullable=False
+    )
+    processed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+
+
+class AdminAuditLog(Base):
+    """Immutable log of admin actions for compliance and customer support."""
+
+    __tablename__ = "admin_audit_log"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    actor_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), index=True
+    )
+    # e.g. 'set_tier', 'set_admin', 'unset_admin', 'issue_refund'
+    action: Mapped[str] = mapped_column(String(50), nullable=False)
+    target_user_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), index=True
+    )
+    payload: Mapped[Optional[dict]] = mapped_column(JSONB)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, nullable=False, index=True
+    )
+
+
 class WebhookEvent(Base):
     """Dedup ledger for incoming webhook deliveries.
 

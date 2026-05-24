@@ -1,4 +1,4 @@
-.PHONY: help install db-up db-down db-logs migrate seed app api test paystack-check paystack-sync
+.PHONY: help install db-up db-down db-logs migrate seed app api test paystack-check paystack-sync admin-promote admin-demote admin-list
 
 PY := .venv/bin/python
 PIP := .venv/bin/pip
@@ -15,6 +15,9 @@ help:
 	@echo "  make test            run the full pytest suite"
 	@echo "  make paystack-check  diagnose Paystack config and DB plans"
 	@echo "  make paystack-sync   sync Paystack plan_codes into the DB by name"
+	@echo "  make admin-promote EMAIL=…    grant admin to a user"
+	@echo "  make admin-demote EMAIL=…     revoke admin from a user"
+	@echo "  make admin-list               list current admins"
 
 install:
 	$(PIP) install -e .
@@ -57,3 +60,18 @@ paystack-check:
 
 paystack-sync:
 	$(PY) -m app.paystack_sync_plans
+
+# Admin user management. Usage:
+#   make admin-promote EMAIL=you@example.com
+#   make admin-demote EMAIL=you@example.com
+#   make admin-list
+admin-promote:
+	@test -n "$(EMAIL)" || (echo "EMAIL=… is required" && exit 1)
+	$(PY) -m app.admin promote $(EMAIL)
+
+admin-demote:
+	@test -n "$(EMAIL)" || (echo "EMAIL=… is required" && exit 1)
+	$(PY) -m app.admin demote $(EMAIL)
+
+admin-list:
+	$(PY) -m app.admin list

@@ -192,7 +192,77 @@ When rotating a secret (e.g. JWT_SECRET, Paystack keys):
 
 ---
 
-## 5. Database Access
+## 5. Admin Access
+
+The admin panel (Users + Analytics) is gated on `User.is_admin = TRUE`.
+There is no public signup path to admin — the **first admin must be
+bootstrapped from a server-side CLI**. Once one admin exists, they can
+grant admin to others from the in-app UI.
+
+### Bootstrapping the first admin (one-time)
+
+**Locally:**
+```bash
+make admin-promote EMAIL=you@numquants.com
+make admin-list
+```
+
+**On staging or production** (via DO App Platform console):
+```bash
+# Open the web service's console in the DO dashboard, or:
+doctl apps console <APP_ID> --component web
+
+# Inside the container shell:
+python -m app.admin promote you@numquants.com
+python -m app.admin list
+```
+
+After promotion, log out + log back in (the `is_admin` flag is read into
+session state on login; existing sessions don't auto-refresh it).
+
+### Granting / revoking admin going forward
+
+Once any admin exists, use the in-app UI:
+
+1. Sign in as an admin.
+2. Sidebar → Admin → Users.
+3. Look up the user by email.
+4. **"Admin access"** section → **"Grant admin"** (with confirmation) or **"Revoke admin"**.
+5. Action is recorded in `admin_audit_log` (immutable, queryable).
+
+Self-demotion is intentionally blocked from the UI to prevent lockout.
+Use `make admin-demote EMAIL=…` on a server if you really need to.
+
+### Issuing a refund
+
+1. Open Paystack dashboard → Transactions → find the charge to refund.
+2. Copy the **transaction reference** (looks like `T123456789` or a UUID).
+3. In the admin panel, look up the user → **Refunds** section → **"Issue a refund"**.
+4. Paste the reference, choose full or partial amount, enter a reason
+   (required for compliance — stored permanently in the audit log).
+5. Click **"Issue refund"**. Paystack returns a refund ID immediately; the
+   refund status flips from `pending` to `processed` when Paystack sends the
+   `refund.processed` webhook (usually within minutes).
+6. The user retains their tier — refunds do **not** cancel subscriptions.
+   To both refund and cancel, also disable the subscription separately
+   (or have the user cancel from their Account page).
+
+### Plan changes (user-facing)
+
+Users can upgrade mid-cycle from the Pricing page:
+
+- **Free → Pro / Enterprise:** standard checkout flow.
+- **Pro → Enterprise:** the app cancels the existing Pro subscription on
+  Paystack, then opens a fresh checkout for Enterprise. Paystack handles
+  proration automatically (unused Pro time is credited toward Enterprise).
+- **Downgrades** are intentionally not exposed. To downgrade, a user cancels
+  their current plan (Account page) and resubscribes to a lower tier when
+  ready. This avoids the complexity of scheduled mid-cycle downgrades and
+  prevents accidental refund disputes.
+
+---
+
+## 6. Database Access
 
 ```bash
 # Connect to staging DB via doctl (requires VPC tunnel):

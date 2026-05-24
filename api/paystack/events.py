@@ -13,7 +13,7 @@ from typing import Any, Callable
 
 from sqlalchemy.orm import Session as SASession
 
-from app.db.models import Plan, Subscription, User
+from app.db.models import Plan, Refund, Subscription, User
 
 
 # --- Service helpers (also used outside webhook context) ---------------------
@@ -163,6 +163,53 @@ def handle_invoice_payment_failed(db: SASession, payload: dict[str, Any]) -> Non
     db.commit()
 
 
+def _resolve_refund_row(db: SASession, data: dict[str, Any]) -> Refund | None:
+    """Match a webhook payload to the Refund row we created on POST /refund.
+
+    Look up by Paystack's refund id first; fall back to transaction reference
+    if the row hasn't been backfilled yet (race between API response and
+    webhook arrival).
+    """
+    refund_id = str(data.get("id") or "").strip()
+    if refund_id:
+        row = db.query(Refund).filter_by(paystack_refund_id=refund_id).first()
+        if row is not None:
+            return row
+    tx_ref = (data.get("transaction") or {}).get("reference") or data.get("transaction_reference")
+    if tx_ref:
+        row = (
+            db.query(Refund)
+            .filter_by(paystack_transaction_reference=tx_ref, status="pending")
+            .order_by(Refund.created_at.desc())
+            .first()
+        )
+        if row is not None and refund_id and not row.paystack_refund_id:
+            row.paystack_refund_id = refund_id
+        return row
+    return None
+
+
+def handle_refund_processed(db: SASession, payload: dict[str, Any]) -> None:
+    data = payload.get("data", {})
+    row = _resolve_refund_row(db, data)
+    if row is None:
+        return
+    row.status = "processed"
+    row.processed_at = datetime.now(timezone.utc)
+    db.commit()
+
+
+def handle_refund_failed(db: SASession, payload: dict[str, Any]) -> None:
+    data = payload.get("data", {})
+    row = _resolve_refund_row(db, data)
+    if row is None:
+        return
+    row.status = "failed"
+    row.error_message = (data.get("reason") or data.get("status") or "")[:1000]
+    row.processed_at = datetime.now(timezone.utc)
+    db.commit()
+
+
 def handle_invoice_payment_success(db: SASession, payload: dict[str, Any]) -> None:
     sub_code = (
         (payload.get("data") or {}).get("subscription") or {}
@@ -185,6 +232,8 @@ EVENT_HANDLERS: dict[str, Callable[[SASession, dict[str, Any]], None] | None] = 
     "subscription.disable": handle_subscription_disable,
     "invoice.payment_failed": handle_invoice_payment_failed,
     "invoice.update": handle_invoice_payment_success,
+    "refund.processed": handle_refund_processed,
+    "refund.failed": handle_refund_failed,
     "charge.success": None,
     "invoice.create": None,
 }

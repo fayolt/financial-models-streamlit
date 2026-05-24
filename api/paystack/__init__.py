@@ -4,6 +4,7 @@ from .client import (
     fetch_plan,
     fetch_subscription,
     initialize_transaction,
+    issue_refund,
     verify_transaction,
 )
 from .events import (
@@ -21,6 +22,7 @@ __all__ = [
     "fetch_plan",
     "fetch_subscription",
     "initialize_transaction",
+    "issue_refund",
     "process_event",
     "verify_signature",
     "verify_transaction",

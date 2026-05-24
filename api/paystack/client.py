@@ -90,3 +90,28 @@ def disable_subscription(subscription_code: str) -> dict[str, Any]:
             json={"code": subscription_code, "token": email_token},
         )
     return _unwrap(resp)
+
+
+def issue_refund(
+    *,
+    transaction_reference: str,
+    amount_minor_units: int | None = None,
+    currency: str | None = None,
+    merchant_note: str | None = None,
+) -> dict[str, Any]:
+    """Refund a charge by transaction reference.
+
+    `amount_minor_units` is in the smallest currency unit (cents for ZAR).
+    Omit it for a full refund. Returns Paystack's refund record including the
+    refund id used to correlate webhook events.
+    """
+    body: dict[str, Any] = {"transaction": transaction_reference}
+    if amount_minor_units is not None:
+        body["amount"] = amount_minor_units
+    if currency:
+        body["currency"] = currency
+    if merchant_note:
+        body["merchant_note"] = merchant_note
+    with httpx.Client(timeout=15.0) as c:
+        resp = c.post(f"{_base_url()}/refund", headers=_headers(), json=body)
+    return _unwrap(resp)
