@@ -17,6 +17,13 @@ ingress:
         exact: staging.numquants.com
       path:
         prefix: /
+  - component:
+      name: web
+    match:
+      authority:
+        exact: numquants-staging-mfzci.ondigitalocean.app
+      path:
+        prefix: /
 
 domains:
 - domain: staging.numquants.com
