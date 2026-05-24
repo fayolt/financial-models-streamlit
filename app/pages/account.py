@@ -261,12 +261,13 @@ def _render_danger_zone(user_id: UUID) -> None:
             except AuthError as e:
                 st.error(str(e))
                 return
-        # Clear local session.
-        clear_session_token()
+        # Clear local session — pop session_state first, then ask the cookie
+        # controller to delete the cookie (it triggers its own rerun once the
+        # JS write completes; an explicit st.rerun() here would abort that).
         st.session_state.pop("user", None)
         st.session_state.pop("session_token", None)
+        clear_session_token()
         st.success("Account deleted.")
-        st.rerun()
 
 
 # --- Page entry -------------------------------------------------------------
@@ -300,10 +301,11 @@ def render() -> None:
         if token:
             with SessionLocal() as db:
                 logout(db, token)
-        clear_session_token()
+        # Pop session_state before clearing the cookie. The cookie controller
+        # triggers its own rerun once the JS clear completes (see login.py).
         st.session_state.pop("user", None)
         st.session_state.pop("session_token", None)
-        st.rerun()
+        clear_session_token()
 
     st.divider()
     _render_danger_zone(UUID(user["id"]))

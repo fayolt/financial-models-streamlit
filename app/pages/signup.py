@@ -70,7 +70,10 @@ def render() -> None:
 
         _, token = login(db, email=email, password=password)
 
-    set_session_token(token, max_age_seconds=SESSION_TTL_SECONDS)
+    # Populate session_state first, then let the cookie controller persist
+    # the token asynchronously. See login.py for the rationale on omitting
+    # st.rerun() — the controller triggers its own rerun once the JS cookie
+    # write completes; calling st.rerun() here would abort that.
     st.session_state.user = {
         "id": str(user.id),
         "email": user.email,
@@ -79,5 +82,5 @@ def render() -> None:
         "is_admin": user.is_admin,
     }
     st.session_state.session_token = token
+    set_session_token(token, max_age_seconds=SESSION_TTL_SECONDS)
     st.success("Account created — welcome!")
-    st.rerun()

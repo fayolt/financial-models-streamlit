@@ -44,11 +44,12 @@ def render() -> None:
             st.error(str(e))
             return
 
-    # Write cookie via injected JS (persists to the browser jar for future
-    # HTTP requests), AND populate session_state immediately so the next
-    # rerun renders the authenticated nav without depending on a fresh
-    # HTTP round-trip.
-    set_session_token(token, max_age_seconds=SESSION_TTL_SECONDS)
+    # Populate session_state for immediate auth view, then ask the cookie
+    # controller to persist the token. We intentionally do NOT call st.rerun()
+    # here — the cookie controller is an async Streamlit component that
+    # renders in the browser and triggers its own rerun once the JS cookie
+    # write completes. Calling st.rerun() too early aborts the component
+    # render and the cookie never persists (the bug we just had).
     st.session_state.user = {
         "id": str(user.id),
         "email": user.email,
@@ -57,8 +58,8 @@ def render() -> None:
         "is_admin": user.is_admin,
     }
     st.session_state.session_token = token
+    set_session_token(token, max_age_seconds=SESSION_TTL_SECONDS)
     st.success("Logged in. Loading your dashboard…")
-    st.rerun()
 
 
 def _render_forgot_link() -> None:
