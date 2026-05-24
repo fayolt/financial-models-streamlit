@@ -8,14 +8,6 @@ alerts:
 vpc:
   id: 9bc59245-98de-4dff-805c-cee86a64f1b6
 
-# New database within the existing prod cluster — isolated schema, no extra cluster cost.
-# DO auto-assigns db_name and credentials; our app sees it as ${db-numquants-staging.DATABASE_URL}.
-databases:
-- cluster_name: db-postgresql-financial-models
-  engine: PG
-  name: db-numquants-staging
-  production: false
-
 ingress:
   rules:
   - component:
@@ -45,9 +37,10 @@ services:
 
   envs:
   # ── Database ───────────────────────────────────────────────────────────────
+  # Value: postgresql://doadmin:<pass>@db-postgresql-financial-models-do-user-31854730-0.k.db.ondigitalocean.com:25060/db-numquants-staging?sslmode=require
   - key: DATABASE_URL
     scope: RUN_AND_BUILD_TIME
-    value: ${db-numquants-staging.DATABASE_URL}
+    type: SECRET
 
   # ── Auth ───────────────────────────────────────────────────────────────────
   - key: JWT_SECRET
