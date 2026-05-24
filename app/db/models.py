@@ -10,6 +10,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Integer,
+    LargeBinary,
     String,
     Text,
 )
@@ -164,6 +165,10 @@ class ReportRun(Base):
     bytes_size: Mapped[Optional[int]] = mapped_column(Integer)
     storage_key: Mapped[Optional[str]] = mapped_column(String(255))
     error_message: Mapped[Optional[str]] = mapped_column(Text)
+    # Async generation: raw bytes written by background thread on success.
+    file_data: Mapped[Optional[bytes]] = mapped_column(LargeBinary)
+    # Serialised inputs — lets a future worker reconstruct the job from DB alone.
+    inputs_json: Mapped[Optional[dict]] = mapped_column(JSONB)
     started_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, nullable=False
     )
@@ -185,6 +190,31 @@ class AuthRateLimit(Base):
         DateTime(timezone=True), primary_key=True
     )
     count: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+
+
+class CommentaryRun(Base):
+    """Async LLM commentary generation job — mirrors ReportRun's state machine."""
+
+    __tablename__ = "commentary_runs"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    model_slug: Mapped[str] = mapped_column(String(40), nullable=False)
+    # 'pending' | 'success' | 'failed'
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    commentary_text: Mapped[Optional[str]] = mapped_column(Text)
+    error_message: Mapped[Optional[str]] = mapped_column(Text)
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, nullable=False
+    )
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
 
 
 class WebhookEvent(Base):
