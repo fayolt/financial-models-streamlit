@@ -13,8 +13,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python deps first so this layer is cached on code-only changes.
+# Set DD_INSTALL_EXTRAS=datadog at build time to include ddtrace for APM.
 COPY pyproject.toml .
-RUN pip install --no-cache-dir .
+ARG DD_INSTALL_EXTRAS=""
+RUN if [ -n "$DD_INSTALL_EXTRAS" ]; then \
+      pip install --no-cache-dir ".[$DD_INSTALL_EXTRAS]"; \
+    else \
+      pip install --no-cache-dir .; \
+    fi
 
 # Copy the rest of the repo (app code + submodule dirs cloned by DO).
 COPY . .

@@ -4,6 +4,7 @@ from __future__ import annotations
 import streamlit as st
 
 from app.auth.cookie import set_session_token
+from app.auth.ratelimit import is_rate_limited, record_failed_attempt
 from app.auth.service import AuthError, login
 from app.auth.tokens import SESSION_TTL_SECONDS
 from app.db import SessionLocal
@@ -33,9 +34,13 @@ def render() -> None:
         return
 
     with SessionLocal() as db:
+        if is_rate_limited(db, "login"):
+            st.error("Too many failed attempts from your location. Please wait a few minutes and try again.")
+            return
         try:
             user, token = login(db, email=email, password=password)
         except AuthError as e:
+            record_failed_attempt(db, "login")
             st.error(str(e))
             return
 

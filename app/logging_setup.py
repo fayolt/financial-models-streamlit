@@ -4,6 +4,9 @@ DigitalOcean and Datadog ingest stdout. Plain `print()` makes filtering by
 severity, service, or request impossible. This module configures the root
 logger to emit JSON lines so downstream agents can index them properly.
 
+When `ddtrace` is installed and active, trace/span IDs are injected into every
+log record so Datadog Logs can correlate with APM traces automatically.
+
 Call `configure_logging(service_name)` exactly once at the top of each
 service entrypoint (Streamlit `app/streamlit_app.py`, FastAPI `api/main.py`).
 """
@@ -17,9 +20,17 @@ from pythonjsonlogger import jsonlogger
 
 _configured = False
 
+# Detect whether ddtrace is active so we can inject trace context into logs.
+try:
+    from ddtrace import tracer as _dd_tracer
+    _DDTRACE = True
+except ImportError:
+    _dd_tracer = None  # type: ignore[assignment]
+    _DDTRACE = False
+
 
 class _ServiceFilter(logging.Filter):
-    """Inject a constant `service` field on every record."""
+    """Inject `service` and (when ddtrace is active) Datadog trace IDs."""
 
     def __init__(self, service: str) -> None:
         super().__init__()
@@ -27,6 +38,12 @@ class _ServiceFilter(logging.Filter):
 
     def filter(self, record: logging.LogRecord) -> bool:
         record.service = self.service
+        if _DDTRACE and _dd_tracer is not None:
+            span = _dd_tracer.current_span()
+            record.dd = {
+                "trace_id": str(span.trace_id) if span else "0",
+                "span_id": str(span.span_id) if span else "0",
+            }
         return True
 
 

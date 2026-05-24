@@ -1,4 +1,4 @@
-name: numquants-staging
+name: numquants-production
 region: fra
 
 alerts:
@@ -9,16 +9,15 @@ vpc:
   id: 9bc59245-98de-4dff-805c-cee86a64f1b6
 
 databases:
-- cluster_name: db-postgresql-financial-models
-  db_name: db-numquants-staging
-  db_user: staging
+- cluster_name: db-postgresql-financial-models-prod
+  db_name: db-numquants-prod
+  db_user: numquants_prod
   engine: PG
-  name: db-postgresql-financial-models
+  name: db-postgresql-financial-models-prod
   production: true
 
-# Order matters: more specific path prefix must come first.
-# `preserve_path_prefix: true` keeps /api/* in the URL forwarded to FastAPI —
-# without it DO strips the matched prefix and api/main.py routes return 404.
+# More-specific prefix must come first.
+# preserve_path_prefix keeps /api/* intact when forwarding to FastAPI.
 ingress:
   rules:
   - component:
@@ -34,20 +33,22 @@ ingress:
         prefix: /
 
 domains:
-- domain: staging.numquants.com
+- domain: numquants.com
   type: PRIMARY
+- domain: www.numquants.com
+  type: ALIAS
 
 services:
 - name: web
   github:
     repo: fayolt/financial-models-streamlit
     branch: main
-    deploy_on_push: false   # trigger staging deploys manually
+    deploy_on_push: false   # trigger production deploys manually
   dockerfile_path: /Dockerfile
   run_command: /app/start.sh
   http_port: 8501
   instance_count: 1
-  instance_size_slug: apps-s-1vcpu-1gb
+  instance_size_slug: apps-s-1vcpu-2gb   # double staging for headroom
   health_check:
     http_path: /_stcore/health
 
@@ -55,18 +56,17 @@ services:
   # ── Environment ────────────────────────────────────────────────────────────
   - key: APP_ENV
     scope: RUN_AND_BUILD_TIME
-    value: staging
+    value: production
 
   # ── Database ───────────────────────────────────────────────────────────────
   - key: DATABASE_URL
     scope: RUN_AND_BUILD_TIME
-    value: ${db-postgresql-financial-models.DATABASE_URL}
+    value: ${db-postgresql-financial-models-prod.DATABASE_URL}
 
   # ── Auth ───────────────────────────────────────────────────────────────────
   - key: JWT_SECRET
     scope: RUN_TIME
     type: SECRET
-    # ⚠ Use a DIFFERENT secret from prod to isolate staging sessions.
   - key: JWT_ALGORITHM
     scope: RUN_TIME
     value: HS256
@@ -86,7 +86,7 @@ services:
     value: https://api.paystack.co
   - key: PAYSTACK_CALLBACK_URL
     scope: RUN_TIME
-    value: https://staging.numquants.com/account
+    value: https://numquants.com/account
 
   # ── AI commentary ──────────────────────────────────────────────────────────
   - key: LLM_PROVIDER
@@ -117,12 +117,12 @@ services:
     value: https://api.mailgun.net
   - key: MAIL_FROM
     scope: RUN_TIME
-    value: "Numquants Staging <no.reply@numquants.com>"
+    value: "Numquants <no.reply@numquants.com>"
 
   # ── App ────────────────────────────────────────────────────────────────────
   - key: APP_BASE_URL
     scope: RUN_TIME
-    value: https://staging.numquants.com
+    value: https://numquants.com
 
   # ── Datadog ────────────────────────────────────────────────────────────────
   - key: DD_API_KEY
@@ -133,7 +133,7 @@ services:
     value: datadoghq.com
   - key: DD_ENV
     scope: RUN_TIME
-    value: staging
+    value: production
   - key: DD_SERVICE
     scope: RUN_TIME
     value: numquants-web
@@ -141,8 +141,7 @@ services:
     scope: RUN_TIME
     value: "0.1.0"
 
-# FastAPI sidecar: receives Paystack webhooks at /api/webhooks/paystack.
-# Streamlit cannot serve POST endpoints, hence the second component.
+# FastAPI sidecar — same image, different run_command + port.
 - name: api
   github:
     repo: fayolt/financial-models-streamlit
@@ -152,17 +151,17 @@ services:
   run_command: uvicorn api.main:app --host 0.0.0.0 --port 8000
   http_port: 8000
   instance_count: 1
-  instance_size_slug: apps-s-1vcpu-0.5gb
+  instance_size_slug: apps-s-1vcpu-1gb
   health_check:
     http_path: /api/health
 
   envs:
   - key: APP_ENV
     scope: RUN_AND_BUILD_TIME
-    value: staging
+    value: production
   - key: DATABASE_URL
     scope: RUN_AND_BUILD_TIME
-    value: ${db-postgresql-financial-models.DATABASE_URL}
+    value: ${db-postgresql-financial-models-prod.DATABASE_URL}
   - key: PAYSTACK_SECRET_KEY
     scope: RUN_TIME
     type: SECRET
@@ -174,7 +173,7 @@ services:
     value: datadoghq.com
   - key: DD_ENV
     scope: RUN_TIME
-    value: staging
+    value: production
   - key: DD_SERVICE
     scope: RUN_TIME
     value: numquants-api

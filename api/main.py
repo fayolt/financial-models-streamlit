@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 
 from fastapi import FastAPI, Header, HTTPException, Request
 
-from app.config import log_startup_summary, validate_for_api
+from app.config import APP_ENV, log_startup_summary, validate_for_api
 from app.logging_setup import configure_logging
 
 # JSON logs to stdout for DO/Datadog ingestion.
@@ -30,7 +30,25 @@ from app.db.models import WebhookEvent
 log = logging.getLogger("paystack.webhook")
 log_startup_summary("api")
 
-app = FastAPI(title="Numquants Backend", version="0.1.0")
+app = FastAPI(
+    title="Numquants Backend",
+    version="0.1.0",
+    # Disable docs in production to avoid exposing API schema publicly.
+    docs_url=None if APP_ENV == "production" else "/docs",
+    redoc_url=None if APP_ENV == "production" else "/redoc",
+)
+
+# Optional Datadog APM — activate when ddtrace is installed and DD_API_KEY is set.
+import os as _os  # noqa: E402
+
+if _os.environ.get("DD_API_KEY"):
+    try:
+        from ddtrace.contrib.asgi import TraceMiddleware  # type: ignore[import]
+        from ddtrace import tracer as _dd_tracer  # type: ignore[import]
+        app.add_middleware(TraceMiddleware, tracer=_dd_tracer)
+        log.info("Datadog APM tracing enabled")
+    except ImportError:
+        log.info("ddtrace not installed — APM tracing disabled")
 
 
 @app.get("/api/health")

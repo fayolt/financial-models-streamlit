@@ -170,6 +170,23 @@ class ReportRun(Base):
     completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
 
 
+class AuthRateLimit(Base):
+    """Per-IP attempt counter for brute-force protection on auth endpoints.
+
+    Keyed by (ip, action, window_start) — one row per 5-minute window.
+    Cleaned up lazily on each check.
+    """
+
+    __tablename__ = "auth_rate_limits"
+
+    ip: Mapped[str] = mapped_column(Text, primary_key=True)
+    action: Mapped[str] = mapped_column(String(20), primary_key=True)
+    window_start: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), primary_key=True
+    )
+    count: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+
+
 class WebhookEvent(Base):
     """Dedup ledger for incoming webhook deliveries.
 

@@ -45,8 +45,10 @@ from app.pages import (  # noqa: E402
     model_workspace,
     models_dashboard,
     pricing,
+    privacy,
     reset_password,
     signup,
+    terms,
     verify_email,
 )
 from app.pages.account import (  # noqa: E402
@@ -256,6 +258,8 @@ if "user" not in st.session_state:
         st.Page(login.render, title="Log in", url_path="login", icon=":material/login:"),
         st.Page(signup.render, title="Sign up", url_path="signup", icon=":material/person_add:"),
         st.Page(forgot_password.render, title="Forgot password", url_path="forgot-password", icon=":material/lock_reset:"),
+        st.Page(terms.render, title="Terms of Service", url_path="terms", icon=":material/gavel:"),
+        st.Page(privacy.render, title="Privacy Policy", url_path="privacy", icon=":material/policy:"),
     ])
     _run_with_error_boundary(pg.run)
 else:
@@ -360,7 +364,7 @@ else:
         default=True,
     )
 
-    # --- Billing + Admin pages ----------------------------------------------
+    # --- Billing + Legal + Admin pages ---------------------------------------
     account_page = st.Page(
         account.render, title="Account", url_path="account",
         icon=":material/account_circle:",
@@ -368,6 +372,14 @@ else:
     pricing_page = st.Page(
         pricing.render, title="Pricing", url_path="pricing",
         icon=":material/payments:",
+    )
+    terms_page = st.Page(
+        terms.render, title="Terms of Service", url_path="terms",
+        icon=":material/gavel:",
+    )
+    privacy_page = st.Page(
+        privacy.render, title="Privacy Policy", url_path="privacy",
+        icon=":material/policy:",
     )
     admin_pages: list[st.Page] = []
     if user_dict.get("is_admin"):
@@ -435,6 +447,12 @@ else:
         ):
             st.switch_page(account_page)
 
+        st.markdown("**LEGAL**")
+        if st.button("📄  Terms", key="sidebar-terms", use_container_width=True):
+            st.switch_page(terms_page)
+        if st.button("🔒  Privacy", key="sidebar-privacy", use_container_width=True):
+            st.switch_page(privacy_page)
+
         if admin_pages:
             st.markdown("**ADMIN**")
             if st.button(
@@ -451,7 +469,8 @@ else:
     # --- Hidden nav: still gives us URL routing without showing the default
     # sidebar list (we render our own above). ---
     pg = st.navigation(
-        [dashboard_page, *plugin_page_objs.values(), pricing_page, account_page, *admin_pages],
+        [dashboard_page, *plugin_page_objs.values(), pricing_page, account_page,
+         terms_page, privacy_page, *admin_pages],
         position="hidden",
     )
     _run_with_error_boundary(pg.run)

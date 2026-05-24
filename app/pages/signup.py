@@ -4,6 +4,7 @@ from __future__ import annotations
 import streamlit as st
 
 from app.auth.cookie import set_session_token
+from app.auth.ratelimit import is_rate_limited, record_failed_attempt
 from app.auth.service import AuthError, login, signup_silent
 from app.auth.tokens import SESSION_TTL_SECONDS
 from app.db import SessionLocal
@@ -26,6 +27,14 @@ def render() -> None:
         '</p>',
         unsafe_allow_html=True,
     )
+    st.markdown(
+        '<p style="margin-top:2px;font-size:11px;color:gray;">'
+        'By creating an account you agree to our '
+        '<a href="/terms" target="_self">Terms of Service</a> and '
+        '<a href="/privacy" target="_self">Privacy Policy</a>.'
+        '</p>',
+        unsafe_allow_html=True,
+    )
 
     if not submitted:
         return
@@ -37,11 +46,15 @@ def render() -> None:
         return
 
     with SessionLocal() as db:
+        if is_rate_limited(db, "signup"):
+            st.error("Too many signup attempts from your location. Please wait a few minutes.")
+            return
         try:
             user = signup_silent(
                 db, email=email, password=password, full_name=full_name or None
             )
         except AuthError as e:
+            record_failed_attempt(db, "signup")
             st.error(str(e))
             return
 

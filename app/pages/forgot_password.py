@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import streamlit as st
 
+from app.auth.ratelimit import is_rate_limited, record_failed_attempt
 from app.auth.service import request_password_reset
 from app.db import SessionLocal
 
@@ -29,6 +30,10 @@ def render() -> None:
         return
 
     with SessionLocal() as db:
+        if is_rate_limited(db, "reset"):
+            st.error("Too many reset requests from your location. Please wait a few minutes.")
+            return
+        record_failed_attempt(db, "reset")  # count every request, not just failures
         request_password_reset(db, email=email)
 
     # Always show the same message — don't disclose whether the email exists.
