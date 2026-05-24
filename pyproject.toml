@@ -32,9 +32,19 @@ dependencies = [
     "openai>=1.40",
     "anthropic>=0.40",
     "python-json-logger>=2.0",
-    # Submodule deps (kept here so the unified image installs everything).
+    # ── Submodule deps ─────────────────────────────────────────────────────────
+    # Top-level imports (break module load if missing):
+    "requests>=2.28",         # biotech/streamlit_app.py
+    "altair>=5,<6",           # chicken-farming/streamlit_app.py
+    # Lazy imports (break specific features if missing):
+    "scikit-learn>=1.3",      # cassava-ethanol AdvancedAnalyticsToolkit, microbrewery predictive analytics
+    "statsmodels>=0.14",      # cassava-ethanol ARIMA forecasting
+    "pypdf>=3.0",             # chicken-farming + pharma PDF reading (also satisfies PyPDF2 callers)
+    "python-pptx>=0.6",       # chicken-farming PowerPoint export
+    "fpdf2>=2.7",             # pharma PDF generation (provides `from fpdf import FPDF`)
+    # Always needed:
     "networkx>=3.0",          # cassava-ethanol/bioethanol_model/advanced_tools.py
-    "numpy-financial>=1.0",   # cassava-ethanol (npf.irr, npf.npv etc.)
+    "numpy-financial>=1.0",   # cassava-ethanol + pharma + solar-farm (npf.irr, npf.npv)
 ]
 
 [project.optional-dependencies]
