@@ -7,16 +7,28 @@ the /api/* route.
 """
 from __future__ import annotations
 
+import hashlib
 import logging
+from datetime import datetime, timezone
 
 from fastapi import FastAPI, Header, HTTPException, Request
+
+from app.config import log_startup_summary, validate_for_api
+from app.logging_setup import configure_logging
+
+# JSON logs to stdout for DO/Datadog ingestion.
+configure_logging("api")
+
+# Fail loud on missing/placeholder secrets in production.
+validate_for_api()
 
 from api.paystack.events import process_event
 from api.paystack.signature import verify_signature
 from app.db import SessionLocal
+from app.db.models import WebhookEvent
 
 log = logging.getLogger("paystack.webhook")
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(message)s")
+log_startup_summary("api")
 
 app = FastAPI(title="Numquants Backend", version="0.1.0")
 
@@ -56,10 +68,47 @@ async def paystack_webhook(
         log.warning("payload missing 'event' field")
         raise HTTPException(status_code=400, detail="Missing 'event' field")
 
-    log.info("event=%s — dispatching", event)
+    # Idempotency: dedup by SHA-256 of the raw body. Paystack retries deliver
+    # the same body, so identical hash means we've already seen this event.
+    event_id = hashlib.sha256(raw_body).hexdigest()
 
     with SessionLocal() as db:
-        handled = process_event(db, event, payload)
+        existing = (
+            db.query(WebhookEvent)
+            .filter(WebhookEvent.event_id == event_id)
+            .one_or_none()
+        )
+        if existing is not None:
+            log.info(
+                "event=%s duplicate (event_id=%s prior status=%s) — skipping",
+                event,
+                event_id[:12],
+                existing.status,
+            )
+            return {"status": "ok", "handled": False, "deduped": True}
+
+        record = WebhookEvent(
+            provider="paystack",
+            event_id=event_id,
+            event_type=event,
+            status="received",
+            raw_payload=payload,
+        )
+        db.add(record)
+        db.commit()
+
+        log.info("event=%s id=%s — dispatching", event, event_id[:12])
+        try:
+            handled = process_event(db, event, payload)
+            record.status = "processed"
+            record.processed_at = datetime.now(timezone.utc)
+            db.commit()
+        except Exception as e:
+            log.exception("event=%s handler failed", event)
+            record.status = "failed"
+            record.error_message = str(e)[:1000]
+            db.commit()
+            raise HTTPException(status_code=500, detail="Handler failed")
 
     log.info("event=%s handled=%s", event, handled)
     return {"status": "ok", "handled": handled}

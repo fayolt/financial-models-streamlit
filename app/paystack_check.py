@@ -85,6 +85,36 @@ def main() -> int:
     _ok(f"PAYSTACK_BASE_URL = {base_url}")
     print()
 
+    # --- Webhook reachability ---------------------------------------------
+    app_base_url = os.environ.get("APP_BASE_URL", "").rstrip("/")
+    if app_base_url:
+        webhook_url = f"{app_base_url}/api/webhooks/paystack"
+        try:
+            with httpx.Client(timeout=10.0) as c:
+                # POST with invalid signature: expect 401 (reachable, signature rejected).
+                resp = c.post(
+                    webhook_url,
+                    headers={
+                        "Content-Type": "application/json",
+                        "x-paystack-signature": "invalid-test-signature",
+                    },
+                    content=b'{"event":"ping","data":{}}',
+                )
+            if resp.status_code == 401:
+                _ok(f"Webhook reachable at {webhook_url} (rejected unsigned: 401)")
+            elif resp.status_code == 404:
+                _bad(f"Webhook NOT reachable at {webhook_url} (404). Is the api service deployed?")
+                problems += 1
+            else:
+                _warn(f"Webhook returned unexpected {resp.status_code} at {webhook_url}")
+                problems += 1
+        except httpx.HTTPError as e:
+            _bad(f"Webhook reachability check failed: {e}")
+            problems += 1
+    else:
+        _warn("APP_BASE_URL not set — skipping webhook reachability check")
+    print()
+
     # --- API connectivity --------------------------------------------------
     paystack_plans: list[dict[str, Any]] = []
     if secret:

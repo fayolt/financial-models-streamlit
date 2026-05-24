@@ -60,9 +60,16 @@ def test_signup_normalises_email(db: Session):
 
 
 def test_signup_rejects_duplicate_email(db: Session):
+    from app.auth.service import SignupAlreadyExists, signup_silent
     signup(db, email="carol@example.com", password="strongpass1")
-    with pytest.raises(AuthError, match="already in use"):
+    # signup() raises a sentinel exception; the UI never sees it.
+    with pytest.raises(SignupAlreadyExists):
         signup(db, email="carol@example.com", password="otherpass2")
+    # signup_silent() swallows the duplicate and returns None — this is
+    # what the signup page calls so we don't leak account existence.
+    assert (
+        signup_silent(db, email="carol@example.com", password="otherpass2") is None
+    )
 
 
 def test_signup_rejects_short_password(db: Session):

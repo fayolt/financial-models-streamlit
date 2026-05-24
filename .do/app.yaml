@@ -16,8 +16,17 @@ databases:
   name: db-postgresql-financial-models
   production: true
 
+# Order matters: more specific path prefix must come first.
+# `preserve_path_prefix: true` keeps /api/* in the URL forwarded to FastAPI —
+# without it DO strips the matched prefix and api/main.py routes return 404.
 ingress:
   rules:
+  - component:
+      name: api
+      preserve_path_prefix: true
+    match:
+      path:
+        prefix: /api
   - component:
       name: web
     match:
@@ -39,8 +48,15 @@ services:
   http_port: 8501
   instance_count: 1
   instance_size_slug: apps-s-1vcpu-1gb
+  health_check:
+    http_path: /_stcore/health
 
   envs:
+  # ── Environment ────────────────────────────────────────────────────────────
+  - key: APP_ENV
+    scope: RUN_AND_BUILD_TIME
+    value: staging
+
   # ── Database ───────────────────────────────────────────────────────────────
   - key: DATABASE_URL
     scope: RUN_AND_BUILD_TIME
@@ -107,3 +123,29 @@ services:
   - key: APP_BASE_URL
     scope: RUN_TIME
     value: https://staging.numquants.com
+
+# FastAPI sidecar: receives Paystack webhooks at /api/webhooks/paystack.
+# Streamlit cannot serve POST endpoints, hence the second component.
+- name: api
+  github:
+    repo: fayolt/financial-models-streamlit
+    branch: main
+    deploy_on_push: false
+  dockerfile_path: /Dockerfile
+  run_command: uvicorn api.main:app --host 0.0.0.0 --port 8000
+  http_port: 8000
+  instance_count: 1
+  instance_size_slug: apps-s-1vcpu-0.5gb
+  health_check:
+    http_path: /api/health
+
+  envs:
+  - key: APP_ENV
+    scope: RUN_AND_BUILD_TIME
+    value: staging
+  - key: DATABASE_URL
+    scope: RUN_AND_BUILD_TIME
+    value: ${db-postgresql-financial-models.DATABASE_URL}
+  - key: PAYSTACK_SECRET_KEY
+    scope: RUN_TIME
+    type: SECRET

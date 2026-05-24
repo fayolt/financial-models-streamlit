@@ -122,9 +122,17 @@ def test_wrong_signature_rejected(client: TestClient):
 
 
 def test_unknown_event_acked_not_handled(client: TestClient):
-    resp = _post(client, {"event": "totally.made.up", "data": {}})
+    # Use a unique nonce so the dedup table doesn't short-circuit if a
+    # prior test run already saw this body.
+    import uuid as _u
+    resp = _post(
+        client,
+        {"event": "totally.made.up", "data": {"nonce": _u.uuid4().hex}},
+    )
     assert resp.status_code == 200
-    assert resp.json() == {"status": "ok", "handled": False}
+    body = resp.json()
+    assert body["status"] == "ok"
+    assert body["handled"] is False
 
 
 # --- subscription.create -----------------------------------------------------

@@ -85,6 +85,67 @@ If you didn't request this, reply to this email immediately.
     return subject, text, html
 
 
+def verify_email_email(
+    *,
+    recipient_email: str,
+    verify_link: str,
+    ttl_hours: int = 48,
+) -> tuple[str, str, str]:
+    subject = "Confirm your Numquants email"
+    text = f"""Welcome to Numquants Financial Models.
+
+Please confirm that this email address ({recipient_email}) is yours by clicking the link below within the next {ttl_hours} hours:
+
+{verify_link}
+
+You'll need to verify your email before you can subscribe to a paid plan. You can still log in and explore the free tier in the meantime.
+
+— The Numquants team
+"""
+    html = _html_shell(
+        f"""<h2 style="margin-bottom:8px;">Confirm your email</h2>
+<p>Welcome to Numquants. Please confirm that <strong>{recipient_email}</strong> is your address by clicking below within the next <strong>{ttl_hours} hours</strong>.</p>
+<p><a href="{verify_link}"
+   style="background:#1f3a5f;color:#fff;text-decoration:none;padding:10px 16px;border-radius:6px;display:inline-block;">Confirm email</a></p>
+<p style="color:#6b7280;font-size:13px;">You'll need to verify your email before subscribing to a paid plan.</p>"""
+    )
+    return subject, text, html
+
+
+def signup_attempt_existing_email(
+    *,
+    recipient_email: str,
+    app_url: str,
+) -> tuple[str, str, str]:
+    """Sent when someone tries to sign up with an already-registered email.
+    Pairs with the generic success response shown in the UI so we don't leak
+    whether an address is on file."""
+    subject = "Account already exists for this email"
+    text = f"""Someone just tried to create a new Numquants account using {recipient_email}, but an account with this email already exists.
+
+If it was you:
+  • Log in at {app_url.rstrip('/')}/login
+  • Or reset your password at {app_url.rstrip('/')}/forgot-password
+
+If it wasn't you, you can safely ignore this email — no account changes were made.
+
+— Numquants Security
+"""
+    html = _html_shell(
+        f"""<h2 style="margin-bottom:8px;">Account already exists</h2>
+<p>Someone just tried to create a new Numquants account using <strong>{recipient_email}</strong>, but an account already exists with this email.</p>
+<p>If it was you, log in or reset your password:</p>
+<p>
+  <a href="{app_url.rstrip('/')}/login"
+     style="background:#1f3a5f;color:#fff;text-decoration:none;padding:10px 16px;border-radius:6px;display:inline-block;margin-right:8px;">Log in</a>
+  <a href="{app_url.rstrip('/')}/forgot-password"
+     style="background:#f3f4f6;color:#1f2937;text-decoration:none;padding:10px 16px;border-radius:6px;display:inline-block;border:1px solid #d1d5db;">Reset password</a>
+</p>
+<p style="color:#6b7280;font-size:13px;">If it wasn't you, ignore this email — nothing changed.</p>"""
+    )
+    return subject, text, html
+
+
 def password_reset_email(
     *,
     recipient_email: str,

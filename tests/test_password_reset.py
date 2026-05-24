@@ -109,7 +109,9 @@ def test_request_password_reset_sends_email_for_known_user(db: Session, monkeypa
     monkeypatch.setenv("MAILGUN_API_KEY", "key-test")
     monkeypatch.setenv("MAILGUN_DOMAIN", "mg.example.com")
     monkeypatch.setenv("MAIL_FROM", "Numquants <hello@mg.example.com>")
-    monkeypatch.setenv("APP_BASE_URL", "https://numquants.example.com")
+    # APP_BASE_URL is read at import time by app.config; patch the cached
+    # module attribute directly so the reset link uses the test domain.
+    monkeypatch.setattr("app.config.APP_BASE_URL", "https://numquants.example.com")
 
     with patch("app.email.client.httpx.Client") as MockClient:
         instance = MockClient.return_value.__enter__.return_value

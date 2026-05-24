@@ -49,6 +49,8 @@ with open('.do/app.yaml') as f:
     content = f.read()
 
 def inject(text, key, value):
+    # re.sub without count replaces every occurrence, so a key declared on
+    # both the 'web' and 'api' services gets its value injected in both.
     pattern = rf'(- key: {re.escape(key)}\n    scope: \S+\n)    type: SECRET'
     replacement = rf'\1    value: "{value}"'
     return re.sub(pattern, replacement, text)

@@ -10,7 +10,15 @@ from app.db import SessionLocal
 def render() -> None:
     st.title("Set a new password")
 
-    token = st.query_params.get("reset_token")
+    # On first arrival the token lives in ?reset_token=…. Move it into
+    # session state and clear the query string so it doesn't stay in
+    # browser history, referrer headers, or analytics.
+    if "reset_token" in st.query_params:
+        st.session_state["_reset_token"] = st.query_params["reset_token"]
+        st.query_params.clear()
+        st.rerun()
+
+    token = st.session_state.get("_reset_token")
     if not token:
         st.error("Missing reset token. Use the link from the password-reset email.")
         return
@@ -36,6 +44,7 @@ def render() -> None:
             st.error(str(e))
             return
 
-    st.query_params.clear()
+    # Single-use: consume the token so refreshing this page can't retry.
+    st.session_state.pop("_reset_token", None)
     st.success("Password updated. You can now log in with your new password.")
     st.link_button("Go to log in", url="/login", type="primary")

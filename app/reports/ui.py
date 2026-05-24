@@ -8,7 +8,13 @@ import streamlit as st
 
 from app.db import SessionLocal
 from app.plugin.contract import Format, ModelPlugin, ModelResults, SubscriptionTier, User
-from .commentary import CommentaryError, generate_commentary
+from .commentary import (
+    CommentaryError,
+    QuotaExceeded as LLMQuotaExceeded,
+    TIER_TOKEN_CAPS,
+    generate_commentary,
+    remaining_quota,
+)
 from .service import (
     FORMAT_TIER_REQUIRED,
     QuotaExceeded,
@@ -157,10 +163,16 @@ def render_commentary_section(
         st.info("AI-generated executive commentary is an Enterprise-tier feature.")
         return
 
+    with SessionLocal() as _db:
+        remaining = remaining_quota(_db, user.id)
+    cap = TIER_TOKEN_CAPS.get(user.tier.value, 0)
+    used = max(0, cap - remaining)
+    st.caption(f"Monthly AI budget: {used:,} / {cap:,} tokens used  ·  {remaining:,} remaining")
+
     cache_key = f"commentary::{plugin.slug}"
     if cache_key in st.session_state:
         st.markdown(st.session_state[cache_key])
-        if st.button("Regenerate", key=f"regen-comm-{plugin.slug}"):
+        if st.button("Regenerate", key=f"regen-comm-{plugin.slug}", disabled=remaining <= 0):
             st.session_state.pop(cache_key, None)
             st.rerun()
         return
@@ -169,14 +181,21 @@ def render_commentary_section(
         "Generate AI commentary",
         type="primary",
         key=f"gen-comm-{plugin.slug}",
+        disabled=remaining <= 0,
     ):
         with st.spinner("Calling the LLM…"):
             try:
-                text = generate_commentary(
-                    plugin_name=plugin.name,
-                    description=plugin.description,
-                    summary=summary_builder(inputs, results),
-                )
+                with SessionLocal() as _db:
+                    text = generate_commentary(
+                        db=_db,
+                        user_id=user.id,
+                        plugin_name=plugin.name,
+                        description=plugin.description,
+                        summary=summary_builder(inputs, results),
+                    )
+            except LLMQuotaExceeded as e:
+                st.error(str(e))
+                return
             except CommentaryError as e:
                 st.error(f"Couldn't generate commentary: {e}")
                 return

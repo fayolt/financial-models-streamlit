@@ -18,7 +18,7 @@ DEFAULT_PLANS: list[dict] = [
         "tier": "free",
         "paystack_plan_code": None,
         "monthly_price_minor_units": 0,
-        "currency": "NGN",
+        "currency": "ZAR",
         "monthly_report_quota": 0,  # on-screen only, no exports
     },
     {
@@ -26,8 +26,10 @@ DEFAULT_PLANS: list[dict] = [
         "name": "Pro",
         "tier": "pro",
         "paystack_plan_code": None,
-        "monthly_price_minor_units": 15_000 * 100,  # ₦15,000 in kobo
-        "currency": "NGN",
+        # Matches the ZAR plan already configured in the Paystack dashboard.
+        # If you change this, also update the amount in dashboard.paystack.com.
+        "monthly_price_minor_units": 250 * 100,  # ZAR 250.00 in cents
+        "currency": "ZAR",
         "monthly_report_quota": 50,
     },
     {
@@ -35,8 +37,8 @@ DEFAULT_PLANS: list[dict] = [
         "name": "Enterprise",
         "tier": "enterprise",
         "paystack_plan_code": None,
-        "monthly_price_minor_units": 50_000 * 100,  # ₦50,000
-        "currency": "NGN",
+        "monthly_price_minor_units": 300 * 100,  # ZAR 300.00
+        "currency": "ZAR",
         "monthly_report_quota": None,  # unlimited
     },
 ]

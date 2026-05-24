@@ -89,12 +89,25 @@ def _call_main(module: Any) -> None:
 
 
 def _render_error(slug: str, exc: Exception) -> None:
-    st.error(
-        f"Could not load the **{slug}** submodule.  \n"
-        f"`{exc}`  \n\n"
-        "Make sure the submodule is initialised:  \n"
-        f"`git submodule update --init {slug}`",
-    )
+    # Only suggest re-initialising the submodule when the failure is
+    # actually about a missing import or file path — otherwise the message
+    # is misleading. e.g. a Streamlit st.secrets error or a runtime crash
+    # has nothing to do with submodule init.
+    is_init_problem = isinstance(exc, (ImportError, ModuleNotFoundError, FileNotFoundError))
+    if is_init_problem:
+        st.error(
+            f"Could not load the **{slug}** submodule.  \n"
+            f"`{exc}`  \n\n"
+            "Make sure the submodule is initialised:  \n"
+            f"`git submodule update --init {slug}`",
+        )
+    else:
+        st.error(
+            f"The **{slug}** model crashed while loading.  \n"
+            f"`{type(exc).__name__}: {exc}`  \n\n"
+            "This isn't a submodule-init issue — check the logs for the "
+            "full traceback. The reference is in the structured logs.",
+        )
 
 
 # ---------------------------------------------------------------------------

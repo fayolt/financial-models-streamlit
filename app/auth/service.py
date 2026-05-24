@@ -10,11 +10,14 @@ from sqlalchemy.orm import Session as SASession
 
 from app.auth.passwords import hash_password, needs_rehash, verify_password
 from app.auth.tokens import (
+    EMAIL_VERIFY_TTL_SECONDS,
     PASSWORD_RESET_TTL_SECONDS,
     InvalidTokenError,
+    issue_email_verify_token,
     issue_reset_token,
     issue_session_token,
     token_hash,
+    verify_email_verify_token,
     verify_reset_token,
     verify_session_token,
 )
@@ -24,6 +27,8 @@ from app.email import (
     password_changed_email,
     password_reset_email,
     send_email_best_effort,
+    signup_attempt_existing_email,
+    verify_email_email,
     welcome_email,
 )
 
@@ -33,6 +38,11 @@ class AuthError(ValueError):
 
 
 MIN_PASSWORD_LENGTH = 8
+
+
+class SignupAlreadyExists(Exception):
+    """Internal signal: signup tried to create an account with a taken email.
+    Not raised to the UI — see `signup_silent()`."""
 
 
 def signup(
@@ -49,7 +59,7 @@ def signup(
         raise AuthError(f"Password must be at least {MIN_PASSWORD_LENGTH} characters.")
     existing = db.query(User).filter_by(email=email).first()
     if existing is not None:
-        raise AuthError("Email already in use.")
+        raise SignupAlreadyExists()
     user = User(
         email=email,
         password_hash=hash_password(password),
@@ -60,11 +70,74 @@ def signup(
     db.commit()
     db.refresh(user)
     _send_welcome_email(user)
+    _send_verify_email(user)
     return user
 
 
+def _send_verify_email(user: User) -> None:
+    token, _ = issue_email_verify_token(user_id=user.id)
+    verify_link = f"{_app_base_url()}/?verify_email_token={token}"
+    subject, text, html = verify_email_email(
+        recipient_email=user.email,
+        verify_link=verify_link,
+        ttl_hours=EMAIL_VERIFY_TTL_SECONDS // 3600,
+    )
+    send_email_best_effort(to=user.email, subject=subject, text=text, html=html)
+
+
+def request_email_verification(db: SASession, *, user_id: UUID) -> bool:
+    """Re-send the verification email to a user who's still unverified."""
+    user = db.get(User, user_id)
+    if user is None or user.email_verified_at is not None:
+        return False
+    _send_verify_email(user)
+    return True
+
+
+def confirm_email_verification(db: SASession, *, token: str) -> User:
+    """Verify the email-verification JWT and mark the user verified.
+    Idempotent — re-clicking the link keeps the original `email_verified_at`."""
+    try:
+        user_id = verify_email_verify_token(token)
+    except InvalidTokenError as e:
+        raise AuthError(f"Verification link is invalid or expired: {e}") from e
+    user = db.get(User, user_id)
+    if user is None:
+        raise AuthError("Account not found.")
+    if user.email_verified_at is None:
+        user.email_verified_at = datetime.now(timezone.utc)
+        db.commit()
+        db.refresh(user)
+    return user
+
+
+def signup_silent(
+    db: SASession,
+    *,
+    email: str,
+    password: str,
+    full_name: str | None = None,
+) -> User | None:
+    """Like signup(), but if the email is already registered, returns None
+    after sending an "account already exists" email to that address. Used by
+    the UI so we never leak which addresses are on file."""
+    try:
+        return signup(db, email=email, password=password, full_name=full_name)
+    except SignupAlreadyExists:
+        normalized = email.strip().lower()
+        subject, text, html = signup_attempt_existing_email(
+            recipient_email=normalized,
+            app_url=_app_base_url(),
+        )
+        send_email_best_effort(
+            to=normalized, subject=subject, text=text, html=html
+        )
+        return None
+
+
 def _app_base_url() -> str:
-    return os.environ.get("APP_BASE_URL", "http://localhost:8501").rstrip("/")
+    from app.config import APP_BASE_URL
+    return APP_BASE_URL
 
 
 def _send_welcome_email(user: User) -> None:

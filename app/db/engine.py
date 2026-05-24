@@ -1,16 +1,12 @@
 """SQLAlchemy engine and session factory."""
 from __future__ import annotations
 
-import os
 from typing import Iterator
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
-DATABASE_URL: str = os.environ.get(
-    "DATABASE_URL",
-    "postgresql+psycopg2://numquants:numquants_dev@localhost:5433/numquants",
-)
+from app.config import DATABASE_URL
 
 engine = create_engine(DATABASE_URL, pool_pre_ping=True, future=True)
 SessionLocal = sessionmaker(
