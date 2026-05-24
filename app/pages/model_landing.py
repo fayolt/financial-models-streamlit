@@ -30,16 +30,17 @@ def mark_not_started(slug: str) -> None:
     st.session_state.pop(_create_flag_key(slug), None)
 
 
+@st.cache_data(show_spinner=False, hash_funcs={ModelPlugin: lambda p: p.slug})
 def _template_bytes(plugin: ModelPlugin) -> bytes:
     """Build a minimal "input template" Excel from the plugin's input_schema.
 
-    Returns a one-row workbook listing the schema field names with their
-    default values. Placeholder for a richer per-model template later."""
+    Cached by plugin.slug so the openpyxl write only happens once per process —
+    repeated navigations to the landing page are instant.
+    """
     try:
         import pandas as pd
 
         defaults = plugin.default_inputs()
-        # Pydantic v2 model dump → dict of field → default value
         row = defaults.model_dump() if hasattr(defaults, "model_dump") else dict(defaults)
         df = pd.DataFrame([row])
         buf = io.BytesIO()
