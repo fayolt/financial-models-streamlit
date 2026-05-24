@@ -19,7 +19,6 @@ ingress:
 domains:
 - domain: staging.numquants.com
   type: PRIMARY
-  zone: numquants.com
 
 services:
 - name: web
