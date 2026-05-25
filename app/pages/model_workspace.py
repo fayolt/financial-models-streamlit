@@ -28,12 +28,19 @@ from __future__ import annotations
 import importlib.util
 import runpy
 import sys
+import threading
 from pathlib import Path
 from typing import Any
 
 import streamlit as st
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
+
+# Per-module threading.Event — set when a module is fully initialised.
+# Prevents the main thread from using a partially-initialised module that a
+# background pre-warm thread is still running exec_module on.
+_MODULE_READY: dict[str, threading.Event] = {}
+_MODULE_LOCK = threading.Lock()
 
 
 # ---------------------------------------------------------------------------
@@ -51,13 +58,27 @@ def _patch_spc():
 def _load_module(module_name: str, app_path: Path, extra_sys_path: str | None = None) -> Any:
     """Import a submodule script once and cache it in sys.modules.
 
-    Top-level code runs during the first load (function defs, imports, any
-    module-level st.* calls).  set_page_config is suppressed so it doesn't
-    conflict with our app's already-set config.  Subsequent calls return the
-    cached module without re-executing.
+    Thread-safe: if a background pre-warm thread is mid-way through
+    exec_module, the main thread waits for it to complete before returning
+    the module — preventing use of a partially-initialised module.
     """
+    # Fast path: already loaded. Wait if still initialising (pre-warm in progress).
     if module_name in sys.modules:
+        with _MODULE_LOCK:
+            event = _MODULE_READY.get(module_name)
+        if event is not None:
+            event.wait(timeout=60)
         return sys.modules[module_name]
+
+    # Claim the module slot under lock so parallel callers don't double-load.
+    with _MODULE_LOCK:
+        if module_name in sys.modules:
+            event = _MODULE_READY.get(module_name)
+            if event is not None:
+                event.wait(timeout=60)
+            return sys.modules[module_name]
+        ready = threading.Event()
+        _MODULE_READY[module_name] = ready
 
     submodule_dir = str(app_path.parent)
     for p in ([extra_sys_path] if extra_sys_path else []) + [submodule_dir]:
@@ -66,6 +87,7 @@ def _load_module(module_name: str, app_path: Path, extra_sys_path: str | None = 
 
     spec = importlib.util.spec_from_file_location(module_name, app_path)
     if spec is None or spec.loader is None:
+        ready.set()
         raise RuntimeError(f"Could not locate {app_path}")
     module = importlib.util.module_from_spec(spec)
     sys.modules[module_name] = module
@@ -73,9 +95,13 @@ def _load_module(module_name: str, app_path: Path, extra_sys_path: str | None = 
     orig = _patch_spc()
     try:
         spec.loader.exec_module(module)
+    except Exception:
+        ready.set()
+        raise
     finally:
         st.set_page_config = orig
 
+    ready.set()
     return module
 
 

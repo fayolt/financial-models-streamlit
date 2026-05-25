@@ -192,6 +192,39 @@ def _registry():
     return load_plugins(_REPO_ROOT / "models")
 
 
+@st.cache_resource
+def _prewarm_submodules() -> bool:
+    """Start a background thread that pre-imports all submodules once per process.
+
+    Eliminates the cold-start import delay (3–10 s) on first model navigation.
+    solar-farm is excluded — it uses runpy.run_path() on every render, not a
+    cached module, so pre-importing its top-level code serves no purpose.
+    pharma is excluded — its entry point is pharma_financial.app, not
+    streamlit_app.py; the thin launcher loads fast anyway.
+    """
+    import threading as _threading
+
+    _TO_PREWARM = [
+        ("_inline_biotech_app",        _REPO_ROOT / "biotech"          / "streamlit_app.py"),
+        ("_inline_cassava_ethanol_app", _REPO_ROOT / "cassava-ethanol"  / "streamlit_app.py"),
+        ("_inline_chicken_farming_app", _REPO_ROOT / "chicken-farming"  / "streamlit_app.py"),
+        ("_inline_goat_farming_app",    _REPO_ROOT / "goat-farming"     / "streamlit_app.py"),
+        ("_inline_microbrewery_app",    _REPO_ROOT / "microbrewery"     / "streamlit_app.py"),
+    ]
+
+    def _run() -> None:
+        import time
+        time.sleep(5)  # let the app fully start before adding import load
+        for name, path in _TO_PREWARM:
+            try:
+                model_workspace._load_module(name, path)
+            except Exception:
+                pass  # silently skip — the user will see the normal first-load delay
+
+    _threading.Thread(target=_run, daemon=True, name="submodule-prewarm").start()
+    return True
+
+
 st.set_page_config(
     page_title="Numquants Financial Models",
     page_icon="📊",
@@ -278,6 +311,7 @@ if "user" not in st.session_state:
     ])
     _run_with_error_boundary(pg.run)
 else:
+    _prewarm_submodules()  # starts background import thread once per process
     user_dict = st.session_state.user
 
     # Refresh tier from DB on every page load so a webhook-driven demotion
