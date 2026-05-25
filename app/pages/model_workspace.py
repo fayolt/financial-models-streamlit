@@ -215,6 +215,37 @@ def render_pharma_inline() -> None:
         _render_error("pharma", exc)
 
 
+_SIDEBAR_HIDING_TARGETS = ("stSidebar", "stSidebarNav", "collapsedControl")
+
+
+def _patch_markdown_strip_sidebar_css():
+    """Return (original, patched) for st.markdown.
+
+    solar-farm injects `display:none` CSS targeting stSidebar / collapsedControl
+    so its standalone app fills the full viewport. Patching st.markdown lets us
+    strip those rules before they reach the browser — same pattern as _patch_spc.
+    """
+    import re as _re
+
+    orig = st.markdown
+
+    def _stripped(body, *args, **kwargs):
+        if isinstance(body, str) and any(t in body for t in _SIDEBAR_HIDING_TARGETS):
+            # Remove the CSS rule block that hides our navigation sidebar.
+            # Pattern matches from the first sidebar selector up to (and
+            # including) the closing brace of the multi-selector rule block.
+            body = _re.sub(
+                r"\[data-testid=[\"'](?:stSidebar|stSidebarNav|collapsedControl)[\"'][^\]]*\][^}]*\}",
+                "",
+                body,
+                flags=_re.DOTALL | _re.IGNORECASE,
+            )
+        return orig(body, *args, **kwargs)
+
+    st.markdown = _stripped
+    return orig
+
+
 def render_solar_farm_inline() -> None:
     """solar-farm has no main() — re-execute the script on each rerun."""
     try:
@@ -222,13 +253,15 @@ def render_solar_farm_inline() -> None:
         if solar_dir not in sys.path:
             sys.path.insert(0, solar_dir)
 
-        orig = _patch_spc()
+        orig_spc = _patch_spc()
+        orig_md = _patch_markdown_strip_sidebar_css()
         try:
             runpy.run_path(
                 str(_REPO_ROOT / "solar-farm" / "streamlit_app.py"),
                 run_name="__main__",
             )
         finally:
-            st.set_page_config = orig
+            st.set_page_config = orig_spc
+            st.markdown = orig_md
     except Exception as exc:
         _render_error("solar-farm", exc)

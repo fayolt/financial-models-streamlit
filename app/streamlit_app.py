@@ -370,12 +370,13 @@ else:
                 model_landing.render_coming_soon(plugin)
                 return
             if model_landing.is_started(plugin.slug):
-                # Back button to return to landing
-                back_col, _ = st.columns([1, 11])
-                with back_col:
-                    if st.button("← Back", key=f"back-{plugin.slug}"):
-                        model_landing.mark_not_started(plugin.slug)
-                        st.rerun()
+                # Back button — no column wrapper; Streamlit sizes it naturally
+                # so the label never wraps (the old [1,11] column was ~80 px,
+                # too narrow for "← Back" on some viewport widths).
+                if st.button("← Back", key=f"back-{plugin.slug}"):
+                    model_landing.mark_not_started(plugin.slug)
+                    st.rerun()
+                st.write("")  # small vertical gap before model content
                 renderer = _WORKSPACE_RENDERERS.get(plugin.slug)
                 if renderer is not None:
                     _gated_renderer(renderer, plugin, plugin_user)
@@ -446,7 +447,7 @@ else:
     # --- Custom sidebar (replaces Streamlit's default nav rendering) --------
     with st.sidebar:
         st.markdown(
-            "<h2 style='margin:0 0 16px 0;'>"
+            "<h2 style='margin:0 0 16px 0; padding-left:4px;'>"
             "<span style='color:#16a34a;'>●</span> NumQuants"
             "</h2>",
             unsafe_allow_html=True,
