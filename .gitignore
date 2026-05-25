@@ -215,4 +215,7 @@ marimo/_lsp/
 __marimo__/
 
 # Streamlit
-.streamlit/secrets.toml
+# secrets.toml is normally gitignored, but we commit an empty stub so
+# solar-farm's st.secrets.get() calls don't raise FileNotFoundError in
+# the DO container. Real secrets come from env vars, never this file.
+# .streamlit/secrets.toml
