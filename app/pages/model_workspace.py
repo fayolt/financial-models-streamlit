@@ -152,60 +152,12 @@ def render_biotech_inline() -> None:
         _render_error("biotech", exc)
 
 
-def _patch_cassava_annual_sync(module: Any) -> None:
-    """Monkey-patch _sync_projection_from_session to also shift annual table years.
-
-    The upstream submodule shifts monthly table columns when the projection
-    horizon changes, but leaves the integer Year columns in inflation_schedule
-    and production_annual untouched. That causes a validation error:
-      ValueError: Inflation Schedule: year values must be within projection horizon
-
-    We can't push fixes to the upstream Kossit73/Cassava_Ethanol repo, so we
-    patch the already-loaded module in-process. The patch is idempotent —
-    re-loading from sys.modules returns the already-patched function.
-    """
-    if getattr(module, "_annual_sync_patched", False):
-        return
-
-    orig = getattr(module, "_sync_projection_from_session", None)
-    if orig is None:
-        return
-
-    import pandas as _pd
-
-    def _shift_year_col(tbl: Any, delta: int) -> None:
-        """Shift integer Year column values by delta in an EditableTable."""
-        try:
-            df = tbl.data
-            col = next((c for c in df.columns if str(c).lower() == "year"), None)
-            if col is None or delta == 0:
-                return
-            years = _pd.to_numeric(df[col], errors="coerce")
-            if years.isna().any():
-                return
-            df.loc[:, col] = (years + delta).astype(int)
-        except Exception:
-            pass  # never block rendering over a shift failure
-
-    def _patched(page: Any) -> None:
-        prev_start = int(page.projection.start_year)
-        orig(page)
-        delta = int(page.projection.start_year) - prev_start
-        if delta:
-            _shift_year_col(page.inflation_schedule, delta)
-            _shift_year_col(page.production_annual, delta)
-
-    module._sync_projection_from_session = _patched
-    module._annual_sync_patched = True
-
-
 def render_cassava_ethanol_inline() -> None:
     try:
         module = _load_module(
             "_inline_cassava_ethanol_app",
             _REPO_ROOT / "cassava-ethanol" / "streamlit_app.py",
         )
-        _patch_cassava_annual_sync(module)
         _call_main(module)
     except Exception as exc:
         _render_error("cassava-ethanol", exc)
