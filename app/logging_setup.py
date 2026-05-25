@@ -57,7 +57,10 @@ def configure_logging(service: str, level: int = logging.INFO) -> None:
     if _configured:
         return
 
-    handler = logging.StreamHandler(stream=sys.stdout)
+    # Write to stderr — Streamlit intercepts sys.stdout during script execution
+    # which prevents application logs from reaching DO/Datadog. stderr is not
+    # intercepted and flows directly to the container's log collector.
+    handler = logging.StreamHandler(stream=sys.stderr)
     handler.setFormatter(
         jsonlogger.JsonFormatter(
             "%(asctime)s %(levelname)s %(name)s %(service)s %(message)s",

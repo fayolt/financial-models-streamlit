@@ -30,13 +30,16 @@ def mark_not_started(slug: str) -> None:
     st.session_state.pop(_create_flag_key(slug), None)
 
 
-@st.cache_data(show_spinner=False, hash_funcs={ModelPlugin: lambda p: p.slug})
-def _template_bytes(plugin: ModelPlugin) -> bytes:
-    """Build a minimal "input template" Excel from the plugin's input_schema.
+# Template bytes are the same for a given plugin slug for the entire process
+# lifetime. A plain module-level dict is simpler and more reliable than
+# @st.cache_data here (no Streamlit hash-function machinery needed).
+_TEMPLATE_CACHE: dict[str, bytes] = {}
 
-    Cached by plugin.slug so the openpyxl write only happens once per process —
-    repeated navigations to the landing page are instant.
-    """
+
+def _template_bytes(plugin: ModelPlugin) -> bytes:
+    """Return cached Excel template bytes for this plugin, building once per process."""
+    if plugin.slug in _TEMPLATE_CACHE:
+        return _TEMPLATE_CACHE[plugin.slug]
     try:
         import pandas as pd
 
@@ -46,9 +49,11 @@ def _template_bytes(plugin: ModelPlugin) -> bytes:
         buf = io.BytesIO()
         with pd.ExcelWriter(buf, engine="openpyxl") as writer:
             df.to_excel(writer, index=False, sheet_name="Inputs")
-        return buf.getvalue()
+        result = buf.getvalue()
     except Exception:
-        return b""
+        result = b""
+    _TEMPLATE_CACHE[plugin.slug] = result
+    return result
 
 
 def render(plugin: ModelPlugin) -> None:
