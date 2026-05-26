@@ -5,7 +5,7 @@ cassava-ethanol, chicken-farming, goat-farming, microbrewery, pharma,
 solar-farm) behind email + password auth and Paystack subscriptions, with
 tier-gated XLSX/PDF reports and optional LLM commentary on selected models.
 
-Each model lives in its own git repo and is vendored here as a submodule.
+Each model lives in its own git repo and is vendored here as a submodule
 
 ## Quick start
 
